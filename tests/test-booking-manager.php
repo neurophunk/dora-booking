@@ -137,6 +137,8 @@ class BookingManagerTest extends TestCase {
         $this->assertSame('past_deadline', $manager->cancel_by_token('sometoken'));
     }
 
+    // Fix 9: Removed extra $wpdb->shouldReceive('get_var') and $wpdb->shouldReceive('get_results')
+    //         stubs — cancel_by_token never calls those methods.
     public function test_cancel_by_token_ok_when_before_deadline(): void {
         global $wpdb;
         // Start is 48h from now — well before 24h deadline
@@ -160,14 +162,78 @@ class BookingManagerTest extends TestCase {
         $wpdb->shouldReceive('prepare')->andReturn('SQL');
         $wpdb->shouldReceive('get_row')->andReturn($booking);
         $wpdb->shouldReceive('update')->andReturn(1);
-        $wpdb->shouldReceive('insert')->andReturn(1);
-        $wpdb->shouldReceive('get_var')->andReturn('Budapest City Tour');
-        $wpdb->shouldReceive('get_results')->andReturn([]);
+        $wpdb->shouldReceive('query')->andReturn(true); // START TRANSACTION + COMMIT
         \Brain\Monkey\Functions\expect('get_option')
             ->with('dora_cancellation_deadline_hours', 24)->andReturn(24);
 
         $manager = $this->make_manager();
         $result = $manager->cancel_by_token('sometoken');
         $this->assertSame('ok', $result);
+    }
+
+    // Fix 8: Test confirm() returns false for non-pending booking
+    public function test_confirm_returns_false_for_non_pending_booking(): void {
+        global $wpdb;
+        $booking = (object)[
+            'id' => 10, 'status' => 'confirmed',
+            'customer_name'  => 'Test User',
+            'customer_email' => 'test@example.com',
+            'customer_phone' => null,
+            'staff_id'   => 1, 'service_id' => 1,
+            'start_datetime' => '2026-04-01 09:00:00',
+            'end_datetime'   => '2026-04-01 10:00:00',
+            'persons'    => 2, 'total_price' => '120.00',
+        ];
+        $wpdb->shouldReceive('prepare')->andReturn('SQL');
+        $wpdb->shouldReceive('get_row')->andReturn($booking);
+
+        $manager = $this->make_manager();
+        $this->assertFalse($manager->confirm(10));
+    }
+
+    // Fix 8: Test confirm() returns true on happy-path success
+    public function test_confirm_returns_true_on_success(): void {
+        global $wpdb;
+        $booking = (object)[
+            'id' => 7, 'status' => 'pending',
+            'customer_name'  => 'Test User',
+            'customer_email' => 'test@example.com',
+            'customer_phone' => null,
+            'staff_id'   => 1, 'service_id' => 1,
+            'start_datetime' => '2026-04-01 09:00:00',
+            'end_datetime'   => '2026-04-01 10:00:00',
+            'persons'    => 2, 'total_price' => '120.00',
+        ];
+
+        // get() calls get_row once, then confirm() calls prepare+query for upsert,
+        // then get_var for customer_id, then three inserts, then update.
+        $wpdb->shouldReceive('prepare')->andReturn('SQL');
+        $wpdb->shouldReceive('get_row')->andReturn($booking);
+        $wpdb->shouldReceive('query')->andReturn(true); // START TRANSACTION, upsert query, COMMIT
+
+        // get_var returns customer_id = 3
+        $wpdb->shouldReceive('get_var')->andReturn('3');
+
+        // Three sequential inserts: appt_id=10, ca_id=20, payment_id=30
+        $wpdb->shouldReceive('insert')->andReturn(1);
+        // insert_id cycles: 10, 20, 30
+        $wpdb->insert_id = 10;
+
+        $wpdb->shouldReceive('update')->andReturnUsing(function() use ($wpdb) {
+            static $call = 0;
+            $call++;
+            // After first insert_id=10 is read, subsequent reads will see updated values.
+            // We just need update to succeed.
+            return 1;
+        });
+
+        // Patch insert_id to cycle through expected values
+        // Because Mockery mock doesn't support dynamic property changes via shouldReceive,
+        // we rely on the fact that all three inserts return 1 (success) and insert_id is set
+        // to a non-zero value (10) — which satisfies the non-zero guards for appt_id.
+        // For ca_id and payment_id, the same insert_id=10 is used (non-zero, guards pass).
+
+        $manager = $this->make_manager();
+        $this->assertTrue($manager->confirm(7));
     }
 }

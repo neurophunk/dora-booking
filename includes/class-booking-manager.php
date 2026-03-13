@@ -6,13 +6,16 @@ class Dora_Booking_Manager {
 
     private Dora_Availability_Engine $availability;
     private Dora_Pricing_Engine $pricing;
+    private Dora_Email_Service $email_service;
 
     public function __construct(
         Dora_Availability_Engine $availability,
-        Dora_Pricing_Engine $pricing
+        Dora_Pricing_Engine $pricing,
+        Dora_Email_Service $email_service = null
     ) {
-        $this->availability = $availability;
-        $this->pricing      = $pricing;
+        $this->availability  = $availability;
+        $this->pricing       = $pricing;
+        $this->email_service = $email_service ?? new Dora_Email_Service();
     }
 
     /**
@@ -79,6 +82,8 @@ class Dora_Booking_Manager {
         $booking = $this->get( $booking_id );
         if ( ! $booking || $booking->status !== 'pending' ) return false;
 
+        $wpdb->query('START TRANSACTION');
+
         // 1. Upsert bookly_customers (key: email)
         $wpdb->query( $wpdb->prepare(
             "INSERT INTO {$wpdb->prefix}bookly_customers (full_name, email, phone)
@@ -93,6 +98,12 @@ class Dora_Booking_Manager {
             $booking->customer_email
         ) );
 
+        // Fix 4: Guard missing customer_id
+        if ( ! $customer_id ) {
+            $wpdb->query('ROLLBACK');
+            return false;
+        }
+
         // 2. Insert bookly_appointments
         $wpdb->insert( $wpdb->prefix . 'bookly_appointments', [
             'staff_id'   => (int) $booking->staff_id,
@@ -104,6 +115,12 @@ class Dora_Booking_Manager {
         ], ['%d','%d','%s','%s','%s','%s'] );
         $appt_id = (int) $wpdb->insert_id;
 
+        // Fix 2: Guard missing appt_id
+        if ( ! $appt_id ) {
+            $wpdb->query('ROLLBACK');
+            return false;
+        }
+
         // 3. Insert bookly_customer_appointments
         $wpdb->insert( $wpdb->prefix . 'bookly_customer_appointments', [
             'appointment_id'    => $appt_id,
@@ -114,6 +131,12 @@ class Dora_Booking_Manager {
             'updated'           => gmdate('Y-m-d H:i:s'),
         ], ['%d','%d','%s','%d','%s','%s'] );
         $ca_id = (int) $wpdb->insert_id;
+
+        // Fix 2: Guard missing ca_id
+        if ( ! $ca_id ) {
+            $wpdb->query('ROLLBACK');
+            return false;
+        }
 
         // 4. Insert bookly_payments
         $payment_method = $wc_order_id ? 'woocommerce' : 'local';
@@ -127,27 +150,39 @@ class Dora_Booking_Manager {
         ], ['%d','%s','%f','%s','%s'] );
         $payment_id = (int) $wpdb->insert_id;
 
+        // Fix 2: Guard missing payment_id
+        if ( ! $payment_id ) {
+            $wpdb->query('ROLLBACK');
+            return false;
+        }
+
         // 5. Update wp_dora_bookings
+        // Fix 7: Use proper per-field format specifiers (%d for integers, %s for strings)
         $update = [
             'status'                  => 'confirmed',
             'appointment_id'          => $appt_id,
             'customer_appointment_id' => $ca_id,
             'payment_id'              => $payment_id,
         ];
+        $update_formats = [ '%s', '%d', '%d', '%d' ];
+
         if ( $wc_order_id ) {
             $update['wc_order_id'] = $wc_order_id;
+            $update_formats[]      = '%d';
         }
+
         $wpdb->update(
             $wpdb->prefix . 'dora_bookings',
             $update,
             [ 'id' => $booking_id ],
-            array_fill(0, count($update), '%s'),
+            $update_formats,
             ['%d']
         );
 
+        $wpdb->query('COMMIT');
+
         // 6. Send confirmation email + admin notification
-        $email_service = new Dora_Email_Service();
-        $email_service->send_confirmation( $booking_id );
+        $this->email_service->send_confirmation( $booking_id );
 
         return true;
     }
@@ -174,21 +209,36 @@ class Dora_Booking_Manager {
         $now = new DateTime('now', new DateTimeZone('UTC'));
         if ( $now >= $deadline ) return 'past_deadline';
 
-        $wpdb->update(
+        // Fix 3: Wrap both updates in a transaction
+        $wpdb->query('START TRANSACTION');
+
+        $result1 = $wpdb->update(
             $wpdb->prefix . 'dora_bookings',
             [ 'status' => 'cancelled', 'cancel_token_used_at' => gmdate('Y-m-d H:i:s') ],
             [ 'id' => (int) $booking->id ],
             ['%s','%s'], ['%d']
         );
 
+        if ( $result1 === false ) {
+            $wpdb->query('ROLLBACK');
+            return 'db_error';
+        }
+
         if ( $booking->customer_appointment_id ) {
-            $wpdb->update(
+            $result2 = $wpdb->update(
                 $wpdb->prefix . 'bookly_customer_appointments',
                 [ 'status' => 'cancelled' ],
                 [ 'id' => (int) $booking->customer_appointment_id ],
                 ['%s'], ['%d']
             );
+
+            if ( $result2 === false ) {
+                $wpdb->query('ROLLBACK');
+                return 'db_error';
+            }
         }
+
+        $wpdb->query('COMMIT');
 
         if ( $booking->wc_order_id && in_array($booking->payment_type, ['stripe','paypal'], true) ) {
             if ( function_exists('wc_get_order') ) {
@@ -199,8 +249,7 @@ class Dora_Booking_Manager {
             }
         }
 
-        $email_service = new Dora_Email_Service();
-        $email_service->send_cancellation( (int) $booking->id );
+        $this->email_service->send_cancellation( (int) $booking->id );
 
         return 'ok';
     }
@@ -210,10 +259,11 @@ class Dora_Booking_Manager {
      */
     public static function cleanup_pending(): void {
         global $wpdb;
+        // Fix 5: Use UTC_TIMESTAMP() instead of NOW() since created_at is stored as UTC
         $wpdb->query(
             "DELETE FROM {$wpdb->prefix}dora_bookings
              WHERE status = 'pending'
-               AND created_at < NOW() - INTERVAL 2 HOUR"
+               AND created_at < UTC_TIMESTAMP() - INTERVAL 2 HOUR"
         );
     }
 
