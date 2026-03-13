@@ -11,7 +11,7 @@ class Dora_Booking_Manager {
     public function __construct(
         Dora_Availability_Engine $availability,
         Dora_Pricing_Engine $pricing,
-        Dora_Email_Service $email_service = null
+        ?Dora_Email_Service $email_service = null
     ) {
         $this->availability  = $availability;
         $this->pricing       = $pricing;
@@ -171,13 +171,18 @@ class Dora_Booking_Manager {
             $update_formats[]      = '%d';
         }
 
-        $wpdb->update(
+        $updated = $wpdb->update(
             $wpdb->prefix . 'dora_bookings',
             $update,
             [ 'id' => $booking_id ],
             $update_formats,
             ['%d']
         );
+
+        if ( $updated === false ) {
+            $wpdb->query('ROLLBACK');
+            return false;
+        }
 
         $wpdb->query('COMMIT');
 
