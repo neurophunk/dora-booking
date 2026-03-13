@@ -76,7 +76,9 @@ function dora_run_migrations(): void {
         cancel_token              VARCHAR(64) NOT NULL,
         cancel_token_used_at      DATETIME NULL,
         created_at                DATETIME NOT NULL,
-        UNIQUE KEY cancel_token (cancel_token)
+        UNIQUE KEY cancel_token (cancel_token),
+        KEY staff_start (staff_id, start_datetime),
+        KEY status_start (status, start_datetime)
     ) {$charset};" );
 
     dbDelta( "CREATE TABLE {$wpdb->prefix}dora_email_log (
@@ -111,7 +113,9 @@ function dora_run_migrations(): void {
 
 function dora_schedule_crons(): void {
     if ( ! wp_next_scheduled( 'dora_reminder_cron' ) ) {
-        wp_schedule_event( strtotime( 'today 08:00' ), 'daily', 'dora_reminder_cron' );
+        $tz        = wp_timezone();
+        $today8am  = new DateTime( 'today 08:00:00', $tz );
+        wp_schedule_event( $today8am->getTimestamp(), 'daily', 'dora_reminder_cron' );
     }
     if ( ! wp_next_scheduled( 'dora_cleanup_pending' ) ) {
         wp_schedule_event( time(), 'daily', 'dora_cleanup_pending' );
