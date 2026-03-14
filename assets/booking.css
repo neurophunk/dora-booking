@@ -240,35 +240,31 @@
 }
 
 .dora-calendar-grid {
-  background: #fff;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+  background: #e5e7eb;
   border: 1px solid #e5e7eb;
   border-radius: 12px;
   overflow: hidden;
   margin-bottom: 1.5rem;
 }
 
-.dora-cal-weekdays {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  background: #f3f4f6;
-  border-bottom: 1px solid #e5e7eb;
+/* Weekday headers + day cells share the same 7-col grid */
+.dora-cal-weekdays,
+#dora-calendar {
+  display: contents;
 }
 
 .dora-cal-weekdays span {
+  background: #f3f4f6;
   text-align: center;
-  padding: .5rem 0;
+  padding: .6rem 0;
   font-size: .75rem;
   font-weight: 700;
   color: #6b7280;
   text-transform: uppercase;
   letter-spacing: .05em;
-}
-
-#dora-calendar {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 1px;
-  background: #e5e7eb;
 }
 
 .dora-cal-day {
