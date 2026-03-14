@@ -24,10 +24,7 @@ foreach ( [
     require_once DORA_PATH . 'includes/' . $class . '.php';
 }
 
-if ( is_admin() ) {
-    require_once DORA_PATH . 'admin/class-admin-page.php';
-    new Dora_Admin_Page();
-}
+require_once DORA_PATH . 'admin/class-admin-page.php';
 
 register_activation_hook( __FILE__, 'dora_activate' );
 
@@ -128,6 +125,9 @@ function dora_schedule_crons(): void {
 add_action( 'plugins_loaded', function () {
     dora_run_migrations();
     dora_schedule_crons();
+    if ( is_admin() ) {
+        new Dora_Admin_Page();
+    }
 } );
 
 add_action( 'dora_reminder_cron', [ 'Dora_Email_Service', 'send_reminders' ] );
