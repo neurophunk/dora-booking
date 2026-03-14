@@ -18,10 +18,19 @@
   };
 
   function ajax(action, data) {
-    return $.post(doraBooking.ajaxUrl, {
-      action: action,
-      nonce: doraBooking.nonce,
-      ...data,
+    var payload = Object.assign({ action: action, nonce: doraBooking.nonce }, data);
+    console.log('[DoraBooking] AJAX →', action, payload);
+    return $.post(doraBooking.ajaxUrl, payload).done(function(res) {
+      if (!res.success) console.error('[DoraBooking] Error ←', action, res);
+    });
+  }
+
+  function updateStepIndicator(step) {
+    $('.dora-step-dot').each(function() {
+      var s = parseInt($(this).data('step'), 10);
+      $(this).removeClass('active done');
+      if (s === step) $(this).addClass('active');
+      if (s < step) $(this).addClass('done');
     });
   }
 
@@ -29,6 +38,7 @@
     $('.dora-step').hide();
     $('#dora-step-' + n).show();
     state.step = n;
+    updateStepIndicator(n);
     $('html,body').animate({ scrollTop: $('#dora-booking').offset().top - 20 }, 200);
   }
 
@@ -38,11 +48,15 @@
       if (!res.success) return;
       var $list = $('#dora-services-list').empty();
       res.data.forEach(function (s) {
+        var mins = s.duration_minutes;
+        var durText = mins >= 60 ? (Math.floor(mins/60) + ' óra' + (mins%60 ? ' ' + mins%60 + ' perc' : '')) : mins + ' perc';
         var $card = $('<div class="dora-service-card" tabindex="0">')
           .attr('data-id', s.id)
           .attr('data-max', s.max_persons || 99)
           .attr('data-staff', s.staff_id || 1)
-          .text(s.title);
+          .append($('<strong>').text(s.title))
+          .append(s.description ? $('<span class="dora-service-desc">').text(s.description) : '')
+          .append($('<span class="dora-service-duration">').text('⏱ ' + durText));
         $list.append($card);
       });
     });
@@ -103,26 +117,51 @@
   });
 
   // ── Step 2: Calendar ─────────────────────────────────────────
+  var calYear, calMonth;
+
   function loadCalendar() {
     var now = new Date();
-    var year = now.getFullYear();
-    var month = String(now.getMonth() + 1).padStart(2, '0');
-    renderMonth(year, month);
+    calYear = now.getFullYear();
+    calMonth = now.getMonth() + 1;
+    renderMonth(calYear, calMonth);
   }
 
+  $(document).on('click', '#dora-cal-prev', function() {
+    calMonth--;
+    if (calMonth < 1) { calMonth = 12; calYear--; }
+    renderMonth(calYear, calMonth);
+  });
+
+  $(document).on('click', '#dora-cal-next', function() {
+    calMonth++;
+    if (calMonth > 12) { calMonth = 1; calYear++; }
+    renderMonth(calYear, calMonth);
+  });
+
   function renderMonth(year, month) {
-    var lastDay = new Date(year, parseInt(month, 10), 0).getDate();
+    var monthStr = String(month).padStart(2, '0');
+    var lastDay = new Date(year, month, 0).getDate();
+    var firstDow = new Date(year, month - 1, 1).getDay(); // 0=Sun
+    // Convert Sun=0 to Mon=0 system
+    var startOffset = (firstDow === 0) ? 6 : firstDow - 1;
+
+    $('#dora-cal-label').text(year + '. ' + ['jan','feb','már','ápr','máj','jún','júl','aug','sze','okt','nov','dec'][month-1]);
 
     ajax('dora_get_available_days', {
       service_id: state.serviceId,
-      year_month: year + '-' + month,
+      year_month: year + '-' + monthStr,
     }).done(function (res) {
       if (!res.success) return;
       var available = res.data;
       var $cal = $('#dora-calendar').empty();
-      $cal.append('<div class="dora-cal-header">' + year + '/' + month + '</div>');
+
+      // Empty cells before first day (Mon-based)
+      for (var i = 0; i < startOffset; i++) {
+        $cal.append('<span class="dora-cal-day empty"></span>');
+      }
+
       for (var d = 1; d <= lastDay; d++) {
-        var date = year + '-' + month + '-' + String(d).padStart(2, '0');
+        var date = year + '-' + monthStr + '-' + String(d).padStart(2, '0');
         var $day = $('<span class="dora-cal-day">')
           .text(d)
           .attr('data-date', date);
@@ -184,13 +223,12 @@
   // ── Step 4: Payment ───────────────────────────────────────────
   function renderSummary() {
     var paymentType = $('input[name="dora-payment"]:checked').val();
-    var paymentLabel = paymentType === 'onsite'
-      ? 'Helyszíni fizetés / Pay on-site'
-      : 'Online fizetés / Online payment';
+    var paymentLabel = paymentType === 'onsite' ? 'Helyszíni fizetés' : 'Online fizetés';
     var html = '<ul>' +
-      '<li>Foglalás / Booking: <strong>' + state.persons + ' fő × ' + state.pricePerPerson + ' ' + state.currency + ' = ' + state.total + ' ' + state.currency + '</strong></li>' +
-      '<li>Időpont / Date: <strong>' + (state.startDatetime || '') + '</strong></li>' +
-      '<li>Fizetés / Payment: <strong>' + paymentLabel + '</strong></li>' +
+      '<li><span>Személyek</span><strong>' + state.persons + ' fő</strong></li>' +
+      '<li><span>Összeg</span><strong>' + state.total + ' ' + state.currency + '</strong></li>' +
+      '<li><span>Időpont</span><strong>' + (state.startDatetime || '') + '</strong></li>' +
+      '<li><span>Fizetési mód</span><strong>' + paymentLabel + '</strong></li>' +
       '</ul>';
     $('#dora-summary').html(html);
   }
@@ -221,7 +259,7 @@
     }).done(function (res) {
       if (!res.success) {
         alert('Hiba: ' + (res.data || 'slot_taken') + '. Kérjük válasszon másik időpontot.');
-        $btn.prop('disabled', false).text('Foglalás megerősítése / Confirm booking');
+        $btn.prop('disabled', false).text('Foglalás megerősítése');
         return;
       }
       state.bookingId = res.data.booking_id;
@@ -231,7 +269,7 @@
             window.location.href = r.data.checkout_url;
           } else {
             alert('Checkout hiba. Kérjük próbálja újra.');
-            $btn.prop('disabled', false).text('Foglalás megerősítése / Confirm booking');
+            $btn.prop('disabled', false).text('Foglalás megerősítése');
           }
         });
       } else {
@@ -242,7 +280,7 @@
             goToStep(5);
           } else {
             alert('Megerősítési hiba. Kérjük próbálja újra.');
-            $btn.prop('disabled', false).text('Foglalás megerősítése / Confirm booking');
+            $btn.prop('disabled', false).text('Foglalás megerősítése');
           }
         });
       }
