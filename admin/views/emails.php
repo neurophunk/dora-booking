@@ -19,12 +19,12 @@ $tpl = $wpdb->get_row( $wpdb->prepare(
     <input type="hidden" name="page" value="dora-emails">
     Típus: <select name="type" onchange="this.form.submit()">
       <?php foreach ($types as $t): ?>
-        <option value="<?= $t ?>" <?= selected($sel_type, $t, false) ?>><?= $t ?></option>
+        <option value="<?= esc_attr($t) ?>" <?= selected($sel_type, $t, false) ?>><?= esc_html($t) ?></option>
       <?php endforeach; ?>
     </select>
     Nyelv: <select name="lang" onchange="this.form.submit()">
       <?php foreach ($langs as $l): ?>
-        <option value="<?= $l ?>" <?= selected($sel_lang, $l, false) ?>><?= $l ?></option>
+        <option value="<?= esc_attr($l) ?>" <?= selected($sel_lang, $l, false) ?>><?= esc_html($l) ?></option>
       <?php endforeach; ?>
     </select>
   </form>
