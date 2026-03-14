@@ -111,15 +111,11 @@
   }
 
   function renderMonth(year, month) {
-    var monthStart = year + '-' + month + '-01';
     var lastDay = new Date(year, parseInt(month, 10), 0).getDate();
-    var monthEnd = year + '-' + month + '-' + String(lastDay).padStart(2, '0');
 
     ajax('dora_get_available_days', {
       service_id: state.serviceId,
-      staff_id: state.staffId,
-      month_start: monthStart,
-      month_end: monthEnd,
+      year_month: year + '-' + month,
     }).done(function (res) {
       if (!res.success) return;
       var available = res.data;
@@ -149,28 +145,25 @@
 
   function loadSlots(date) {
     ajax('dora_get_available_slots', {
-      staff_id: state.staffId,
       service_id: state.serviceId,
       date: date,
     }).done(function (res) {
       if (!res.success) return;
       var $list = $('#dora-slots-list').empty();
-      res.data.forEach(function (slot) {
+      res.data.forEach(function (time) {
         var $btn = $('<button type="button" class="dora-slot-btn">')
-          .text(slot.start + ' \u2013 ' + slot.end)
-          .attr('data-start', slot.start_datetime)
-          .attr('data-end', slot.end_datetime);
+          .text(time)
+          .attr('data-start', date + ' ' + time);
         $list.append($btn);
       });
-      $('#dora-slots').show();
+      if (res.data.length) $('#dora-slots').show();
     });
   }
 
   $(document).on('click', '.dora-slot-btn', function () {
     $('.dora-slot-btn').removeClass('selected');
     $(this).addClass('selected');
-    state.startDatetime = $(this).data('start');
-    state.endDatetime   = $(this).data('end');
+    state.startDatetime = $(this).data('start'); // "YYYY-MM-DD HH:MM" local time
     goToStep(3);
   });
 

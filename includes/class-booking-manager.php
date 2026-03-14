@@ -26,11 +26,13 @@ class Dora_Booking_Manager {
     public function create_pending( array $data ): ?int {
         global $wpdb;
 
-        $duration       = $this->availability->get_duration( (int) $data['service_id'] );
-        $start_datetime = $data['start_datetime'];
-        $end_datetime   = ( new DateTime( $start_datetime, new DateTimeZone( 'UTC' ) ) )
-            ->modify( "+{$duration} minutes" )
-            ->format( 'Y-m-d H:i:s' );
+        $duration = $this->availability->get_duration( (int) $data['service_id'] );
+
+        // $data['start_datetime'] is local Budapest time ("YYYY-MM-DD HH:MM")
+        $start_local = new DateTime( $data['start_datetime'], wp_timezone() );
+        $start_local->setTimezone( new DateTimeZone( 'UTC' ) );
+        $start_datetime = $start_local->format( 'Y-m-d H:i:s' );
+        $end_datetime   = ( clone $start_local )->modify( "+{$duration} minutes" )->format( 'Y-m-d H:i:s' );
 
         $wpdb->query('START TRANSACTION');
 
