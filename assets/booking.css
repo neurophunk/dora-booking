@@ -11,21 +11,7 @@
 .dora-steps-indicator {
   display: flex;
   align-items: flex-start;
-  justify-content: center;
-  gap: 0;
-  margin-bottom: 2rem;
-  position: relative;
-}
-
-.dora-steps-indicator::before {
-  content: '';
-  position: absolute;
-  top: 16px;
-  left: calc(12.5% + 16px);
-  right: calc(12.5% + 16px);
-  height: 2px;
-  background: #e5e7eb;
-  z-index: 0;
+  margin-bottom: 2.5rem;
 }
 
 .dora-step-dot {
@@ -34,7 +20,23 @@
   align-items: center;
   flex: 1;
   position: relative;
-  z-index: 1;
+}
+
+/* Connecting line between dots */
+.dora-step-dot:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 15px;
+  left: calc(50% + 16px);
+  right: calc(-50% + 16px);
+  height: 2px;
+  background: #e5e7eb;
+  z-index: 0;
+  transition: background .3s;
+}
+
+.dora-step-dot.done:not(:last-child)::after {
+  background: #1a56db;
 }
 
 .dora-step-dot span {
@@ -48,13 +50,15 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+  z-index: 1;
   transition: background .2s, color .2s;
 }
 
 .dora-step-dot label {
   font-size: 11px;
   color: #9ca3af;
-  margin-top: 4px;
+  margin-top: 6px;
   white-space: nowrap;
   font-weight: 500;
   transition: color .2s;
