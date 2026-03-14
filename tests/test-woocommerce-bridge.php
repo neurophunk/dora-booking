@@ -63,13 +63,14 @@ class WooCommerceBridgeTest extends TestCase {
         $wpdb->shouldReceive('prepare')->andReturn('SQL');
         $wpdb->shouldReceive('get_row')->andReturn($booking);
         $wpdb->shouldReceive('get_var')->andReturn('Budapest City Tour');
-        $wpdb->shouldReceive('update')->andReturn(1);
+        $wpdb->shouldReceive('update')->once()->andReturn(1);
 
         $order_mock = Mockery::mock('WC_Order');
         $order_mock->shouldReceive('get_id')->andReturn(99);
         $order_mock->shouldReceive('get_checkout_payment_url')->andReturn('https://dorabudapest.com/checkout/order-pay/99/');
         $order_mock->shouldReceive('add_item')->andReturn(true);
         $order_mock->shouldReceive('set_billing_first_name')->andReturn();
+        $order_mock->shouldReceive('set_billing_last_name')->andReturn();
         $order_mock->shouldReceive('set_billing_email')->andReturn();
         $order_mock->shouldReceive('set_billing_phone')->andReturn();
         $order_mock->shouldReceive('set_currency')->andReturn();
@@ -110,5 +111,42 @@ class WooCommerceBridgeTest extends TestCase {
 
         Dora_WooCommerce_Bridge::on_payment_complete(99);
         $this->assertTrue(true);
+    }
+
+    public function test_create_order_returns_null_for_non_pending_booking(): void {
+        global $wpdb;
+        $booking = (object)['id' => 1, 'status' => 'confirmed', 'total_price' => '120.00'];
+        $wpdb->shouldReceive('prepare')->andReturn('SQL');
+        $wpdb->shouldReceive('get_row')->andReturn($booking);
+
+        $this->assertNull($this->make_bridge()->create_order(1));
+    }
+
+    public function test_create_order_returns_null_when_db_update_fails(): void {
+        global $wpdb;
+
+        $booking = (object)[
+            'id' => 1, 'service_id' => 2, 'staff_id' => 1,
+            'start_datetime' => '2026-04-01 09:00:00',
+            'end_datetime'   => '2026-04-01 10:00:00',
+            'persons' => 2, 'total_price' => '120.00', 'currency' => 'EUR',
+            'payment_type' => 'stripe', 'customer_name' => 'Test User', 'customer_email' => 't@t.com',
+            'customer_phone' => '', 'status' => 'pending',
+        ];
+        $wpdb->shouldReceive('prepare')->andReturn('SQL');
+        $wpdb->shouldReceive('get_row')->andReturn($booking);
+        $wpdb->shouldReceive('get_var')->andReturn('Budapest Tour');
+        $wpdb->shouldReceive('update')->andReturn(false); // DB failure
+
+        $order_mock = Mockery::mock('WC_Order');
+        $order_mock->shouldReceive('get_id')->andReturn(99);
+        $order_mock->shouldReceive('add_item')->andReturn(true);
+        $order_mock->shouldReceive('set_billing_first_name', 'set_billing_last_name', 'set_billing_email', 'set_billing_phone', 'set_currency')->andReturn();
+        $order_mock->shouldReceive('calculate_totals', 'save')->andReturn();
+
+        \Brain\Monkey\Functions\expect('wc_create_order')->once()->andReturn($order_mock);
+        \Brain\Monkey\Functions\expect('is_wp_error')->once()->andReturn(false);
+
+        $this->assertNull($this->make_bridge()->create_order(1));
     }
 }

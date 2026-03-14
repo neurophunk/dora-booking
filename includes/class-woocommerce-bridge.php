@@ -17,6 +17,7 @@ class Dora_WooCommerce_Bridge {
     public function create_order( int $booking_id ): ?array {
         $booking = $this->manager->get( $booking_id );
         if ( ! $booking ) return null;
+        if ( $booking->status !== 'pending' ) return null;
 
         $service_name = $this->get_service_name( (int) $booking->service_id );
 
@@ -34,7 +35,9 @@ class Dora_WooCommerce_Bridge {
         $item->add_meta_data( '_dora_persons',    $booking->persons );
         $order->add_item( $item );
 
-        $order->set_billing_first_name( $booking->customer_name );
+        $name_parts = explode( ' ', $booking->customer_name, 2 );
+        $order->set_billing_first_name( $name_parts[0] );
+        $order->set_billing_last_name( $name_parts[1] ?? '' );
         $order->set_billing_email( $booking->customer_email );
         $order->set_billing_phone( $booking->customer_phone ?? '' );
         $order->set_currency( $booking->currency );
@@ -44,13 +47,16 @@ class Dora_WooCommerce_Bridge {
         $order_id = $order->get_id();
 
         global $wpdb;
-        $wpdb->update(
+        $updated = $wpdb->update(
             $wpdb->prefix . 'dora_bookings',
             [ 'wc_order_id' => $order_id ],
             [ 'id'          => $booking_id ],
             [ '%d' ],
             [ '%d' ]
         );
+        if ( $updated === false ) {
+            return null;
+        }
 
         return [
             'order_id'     => $order_id,
@@ -73,7 +79,7 @@ class Dora_WooCommerce_Bridge {
         if ( ! $booking ) return;
 
         $order = wc_get_order( $order_id );
-        if ( $order && (float) $order->get_total() < (float) $booking->total_price ) {
+        if ( $order && abs( (float) $order->get_total() - (float) $booking->total_price ) > 0.01 ) {
             $order->add_order_note( 'DoraBooking: Order total mismatch. Booking NOT confirmed. Manual review required.' );
             return;
         }
