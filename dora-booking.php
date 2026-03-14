@@ -9,7 +9,7 @@
 if ( ! defined( 'ABSPATH' ) ) exit;
 
 define( 'DORA_VERSION', '1.0.0' );
-define( 'DORA_DB_VERSION', '1.0' );
+define( 'DORA_DB_VERSION', '1.1' );
 define( 'DORA_PATH', plugin_dir_path( __FILE__ ) );
 
 // Autoload includes
@@ -106,6 +106,18 @@ function dora_run_migrations(): void {
         meeting_point    TEXT NULL,
         max_persons      TINYINT NOT NULL DEFAULT 99,
         UNIQUE KEY service_id (service_id)
+    ) {$charset};" );
+
+    dbDelta( "CREATE TABLE {$wpdb->prefix}dora_services (
+        id               INT AUTO_INCREMENT PRIMARY KEY,
+        name             VARCHAR(255) NOT NULL,
+        description      TEXT NULL,
+        duration_minutes INT NOT NULL DEFAULT 60,
+        available_times  LONGTEXT NOT NULL,
+        available_days   LONGTEXT NOT NULL,
+        active           TINYINT(1) NOT NULL DEFAULT 1,
+        sort_order       INT NOT NULL DEFAULT 0,
+        created_at       DATETIME NOT NULL
     ) {$charset};" );
 
     update_option( 'dora_booking_db_version', DORA_DB_VERSION );

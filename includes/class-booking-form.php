@@ -45,13 +45,12 @@ class Dora_Booking_Form {
         $this->verify_nonce();
         global $wpdb;
         $services = $wpdb->get_results(
-            "SELECT s.id, s.title, s.duration, c.max_persons, c.meeting_point,
-                    (SELECT ss.staff_id FROM {$wpdb->prefix}bookly_staff_services ss
-                     WHERE ss.service_id = s.id LIMIT 1) AS staff_id
-             FROM {$wpdb->prefix}bookly_services s
+            "SELECT s.id, s.name as title, s.description, s.duration_minutes,
+                    c.max_persons, c.meeting_point
+             FROM {$wpdb->prefix}dora_services s
              LEFT JOIN {$wpdb->prefix}dora_service_config c ON c.service_id = s.id
-             WHERE s.visibility = 'public'
-             ORDER BY s.title ASC"
+             WHERE s.active = 1
+             ORDER BY s.sort_order ASC, s.name ASC"
         );
         wp_send_json_success( $services );
     }
@@ -69,32 +68,23 @@ class Dora_Booking_Form {
 
     public function handle_dora_get_available_days(): void {
         $this->verify_nonce();
-        $service_id  = absint( $_POST['service_id']  ?? 0 );
-        $staff_id    = absint( $_POST['staff_id']    ?? 0 );
-        $month_start = sanitize_text_field( $_POST['month_start'] ?? '' );
-        $month_end   = sanitize_text_field( $_POST['month_end']   ?? '' );
-        if ( ! $service_id || ! $staff_id ) wp_send_json_error( 'invalid_params' );
-
-        $slot_times = $this->get_slot_times( $staff_id );
-        $duration   = $this->get_service_duration( $service_id );
+        $service_id = absint( $_POST['service_id'] ?? 0 );
+        $year_month = sanitize_text_field( $_POST['year_month'] ?? '' );
+        if ( ! $service_id || ! $year_month ) wp_send_json_error( 'invalid_params' );
 
         $engine = new Dora_Availability_Engine();
-        $days   = $engine->get_available_days( $staff_id, $service_id, $month_start, $month_end, $slot_times, $duration );
+        $days   = $engine->get_available_days( $service_id, $year_month );
         wp_send_json_success( $days );
     }
 
     public function handle_dora_get_available_slots(): void {
         $this->verify_nonce();
-        $staff_id   = absint( $_POST['staff_id']   ?? 0 );
         $service_id = absint( $_POST['service_id'] ?? 0 );
         $date       = sanitize_text_field( $_POST['date'] ?? '' );
-        if ( ! $staff_id || ! $date ) wp_send_json_error( 'invalid_params' );
-
-        $slot_times = $this->get_slot_times( $staff_id );
-        $duration   = $this->get_service_duration( $service_id );
+        if ( ! $service_id || ! $date ) wp_send_json_error( 'invalid_params' );
 
         $engine = new Dora_Availability_Engine();
-        $slots  = $engine->get_available_slots_for_day( $staff_id, $date, $slot_times, $duration );
+        $slots  = $engine->get_available_slots( $service_id, $date );
         wp_send_json_success( $slots );
     }
 
@@ -155,7 +145,7 @@ class Dora_Booking_Form {
     }
 
     private function sanitize_booking_input( array $post ): array|\WP_Error {
-        $required = [ 'service_id', 'staff_id', 'start_datetime', 'end_datetime', 'persons', 'payment_type', 'customer_name', 'customer_email' ];
+        $required = [ 'service_id', 'start_datetime', 'persons', 'payment_type', 'customer_name', 'customer_email' ];
         foreach ( $required as $key ) {
             if ( empty( $post[ $key ] ) ) return new \WP_Error( 'missing_field', "Missing: $key" );
         }
@@ -167,9 +157,7 @@ class Dora_Booking_Form {
 
         return [
             'service_id'     => absint( $post['service_id'] ),
-            'staff_id'       => absint( $post['staff_id'] ),
             'start_datetime' => sanitize_text_field( $post['start_datetime'] ),
-            'end_datetime'   => sanitize_text_field( $post['end_datetime'] ),
             'persons'        => absint( $post['persons'] ),
             'payment_type'   => $payment_type,
             'lang'           => in_array( $post['lang'] ?? 'hu', [ 'hu', 'en' ], true ) ? $post['lang'] : 'hu',
@@ -178,23 +166,6 @@ class Dora_Booking_Form {
             'customer_phone' => sanitize_text_field( $post['customer_phone'] ?? '' ),
             'customer_notes' => sanitize_textarea_field( $post['customer_notes'] ?? '' ),
         ];
-    }
-
-    private function get_slot_times( int $staff_id ): array {
-        $times = get_option( "dora_staff_{$staff_id}_slot_times", '' );
-        if ( $times ) {
-            return array_filter( array_map( 'trim', explode( ',', $times ) ) );
-        }
-        return [ '09:00', '14:00' ];
-    }
-
-    private function get_service_duration( int $service_id ): int {
-        global $wpdb;
-        $d = (int) $wpdb->get_var( $wpdb->prepare(
-            "SELECT duration FROM {$wpdb->prefix}bookly_services WHERE id = %d",
-            $service_id
-        ) );
-        return $d ?: 60;
     }
 
     private function page_has_shortcode(): bool {

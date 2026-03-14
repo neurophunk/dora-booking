@@ -29,14 +29,11 @@ class Dora_Email_Service {
         $dt->setTimezone( $tz );
 
         $service_title = (string) $wpdb->get_var( $wpdb->prepare(
-            "SELECT title FROM {$wpdb->prefix}bookly_services WHERE id = %d",
+            "SELECT name FROM {$wpdb->prefix}dora_services WHERE id = %d",
             $booking->service_id
         ) );
 
-        $guide_name = (string) $wpdb->get_var( $wpdb->prepare(
-            "SELECT full_name FROM {$wpdb->prefix}bookly_staff WHERE id = %d",
-            $booking->staff_id
-        ) );
+        $guide_name = (string) get_option( 'dora_guide_name', '' );
 
         $config = $wpdb->get_row( $wpdb->prepare(
             "SELECT meeting_point FROM {$wpdb->prefix}dora_service_config WHERE service_id = %d",
@@ -163,9 +160,9 @@ class Dora_Email_Service {
         global $wpdb;
 
         $booking = $wpdb->get_row( $wpdb->prepare(
-            "SELECT b.*, s.title as service_title
+            "SELECT b.*, s.name as service_title
                FROM {$wpdb->prefix}dora_bookings b
-               LEFT JOIN {$wpdb->prefix}bookly_services s ON s.id = b.service_id
+               LEFT JOIN {$wpdb->prefix}dora_services s ON s.id = b.service_id
               WHERE b.id = %d",
             $booking_id
         ) );

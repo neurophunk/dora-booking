@@ -101,7 +101,7 @@ class Dora_WooCommerce_Bridge {
     private function get_service_name( int $service_id ): string {
         global $wpdb;
         $title = $wpdb->get_var( $wpdb->prepare(
-            "SELECT title FROM {$wpdb->prefix}bookly_services WHERE id = %d",
+            "SELECT name FROM {$wpdb->prefix}dora_services WHERE id = %d",
             $service_id
         ) );
         return $title ?: 'Booking';

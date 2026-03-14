@@ -56,7 +56,7 @@ class EmailServiceTest extends TestCase {
 
         $wpdb->shouldReceive('prepare')->andReturn('SQL');
         $wpdb->shouldReceive('get_var')
-             ->andReturnValues( [ 'Budapest City Tour', 'Dóra Varga' ] );
+             ->andReturnValues( [ 'Budapest City Tour' ] );
         $wpdb->shouldReceive('get_row')
              ->andReturn( (object) [ 'meeting_point' => 'Vörösmarty tér' ] );
 
@@ -66,6 +66,9 @@ class EmailServiceTest extends TestCase {
         //   wp_timezone() => DateTimeZone('Europe/Budapest')
         //   esc_html($v)  => htmlspecialchars($v)
         //   site_url($p)  => 'https://dorabudapest.com' . $p
+
+        \Brain\Monkey\Functions\expect('get_option')
+            ->with('dora_guide_name', '')->andReturn('Dóra Varga');
 
         $service  = new Dora_Email_Service();
         $vars     = $service->build_vars( $booking );

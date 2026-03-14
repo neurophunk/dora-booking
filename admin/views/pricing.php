@@ -1,6 +1,6 @@
 <?php if ( ! defined('ABSPATH') ) exit;
 global $wpdb;
-$services = $wpdb->get_results("SELECT id, title FROM {$wpdb->prefix}bookly_services ORDER BY title");
+$services = $wpdb->get_results("SELECT id, name as title FROM {$wpdb->prefix}dora_services WHERE active=1 ORDER BY sort_order ASC, name ASC");
 $sel_id   = absint($_GET['service'] ?? ($services[0]->id ?? 0));
 $engine   = new Dora_Pricing_Engine();
 $tiers    = $engine->get_tiers($sel_id);

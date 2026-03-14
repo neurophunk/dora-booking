@@ -14,6 +14,8 @@ class Dora_Admin_Page {
         add_action( 'admin_post_dora_resend_email',       [ $this, 'handle_resend_email' ] );
         add_action( 'admin_post_dora_cancel_booking',     [ $this, 'handle_cancel_booking' ] );
         add_action( 'admin_post_dora_export_csv',         [ $this, 'handle_export_csv' ] );
+        add_action( 'admin_post_dora_save_service',       [ $this, 'handle_save_service' ] );
+        add_action( 'admin_post_dora_delete_service',     [ $this, 'handle_delete_service' ] );
     }
 
     public function register_menu(): void {
@@ -24,15 +26,17 @@ class Dora_Admin_Page {
             'dashicons-calendar-alt', 30
         );
         add_submenu_page( 'dora-booking', 'Foglalások',      'Foglalások',      'manage_options', 'dora-booking',         [ $this, 'render_bookings' ] );
+        add_submenu_page( 'dora-booking', 'Szolgáltatások',  'Szolgáltatások',  'manage_options', 'dora-services',        [ $this, 'render_services' ] );
         add_submenu_page( 'dora-booking', 'Árazás',          'Árazás',          'manage_options', 'dora-pricing',         [ $this, 'render_pricing' ] );
         add_submenu_page( 'dora-booking', 'Email sablonok',  'Email sablonok',  'manage_options', 'dora-emails',          [ $this, 'render_emails' ] );
         add_submenu_page( 'dora-booking', 'Beállítások',     'Beállítások',     'manage_options', 'dora-settings',        [ $this, 'render_settings' ] );
     }
 
-    public function render_bookings(): void { include DORA_PATH . 'admin/views/bookings.php'; }
-    public function render_pricing(): void  { include DORA_PATH . 'admin/views/pricing.php'; }
-    public function render_emails(): void   { include DORA_PATH . 'admin/views/emails.php'; }
-    public function render_settings(): void { include DORA_PATH . 'admin/views/settings.php'; }
+    public function render_bookings(): void  { include DORA_PATH . 'admin/views/bookings.php'; }
+    public function render_services(): void  { include DORA_PATH . 'admin/views/services.php'; }
+    public function render_pricing(): void   { include DORA_PATH . 'admin/views/pricing.php'; }
+    public function render_emails(): void    { include DORA_PATH . 'admin/views/emails.php'; }
+    public function render_settings(): void  { include DORA_PATH . 'admin/views/settings.php'; }
 
     // ── Action handlers ───────────────────────────────────────
 
@@ -152,10 +156,6 @@ class Dora_Admin_Page {
             ['status' => 'cancelled', 'cancel_token_used_at' => gmdate('Y-m-d H:i:s')],
             ['id' => $booking_id], ['%s','%s'], ['%d']
         );
-        if ($booking->customer_appointment_id) {
-            $wpdb->update( $wpdb->prefix . 'bookly_customer_appointments',
-                ['status' => 'cancelled'], ['id' => (int)$booking->customer_appointment_id], ['%s'], ['%d'] );
-        }
         $service = new Dora_Email_Service();
         $service->send_cancellation($booking_id);
         wp_redirect( admin_url('admin.php?page=dora-booking&cancelled=1') );
@@ -182,10 +182,10 @@ class Dora_Admin_Page {
         if ($f_status)    { $where[] = 'b.status = %s';          $params[] = $f_status; }
         if ($f_payment)   { $where[] = 'b.payment_type = %s';    $params[] = $f_payment; }
 
-        $sql = "SELECT b.id, s.title as service, b.start_datetime, b.persons, b.total_price, b.currency,
+        $sql = "SELECT b.id, s.name as service, b.start_datetime, b.persons, b.total_price, b.currency,
                        b.payment_type, b.status, b.customer_name, b.customer_email, b.customer_phone, b.created_at
                 FROM {$wpdb->prefix}dora_bookings b
-                LEFT JOIN {$wpdb->prefix}bookly_services s ON s.id = b.service_id
+                LEFT JOIN {$wpdb->prefix}dora_services s ON s.id = b.service_id
                 WHERE " . implode(' AND ', $where) . "
                 ORDER BY b.start_datetime DESC";
 
@@ -201,6 +201,63 @@ class Dora_Admin_Page {
             fputcsv($out, (array) $r);
         }
         fclose($out);
+        exit;
+    }
+
+    public function handle_save_service(): void {
+        check_admin_referer('dora_save_service');
+        if ( ! current_user_can('manage_options') ) wp_die('Unauthorized');
+
+        global $wpdb;
+        $id          = absint( $_POST['id'] ?? 0 );
+        $name        = sanitize_text_field( $_POST['name'] );
+        $description = sanitize_textarea_field( $_POST['description'] ?? '' );
+        $duration    = absint( $_POST['duration_minutes'] );
+        $sort_order  = absint( $_POST['sort_order'] ?? 0 );
+        $active      = isset( $_POST['active'] ) ? 1 : 0;
+
+        // available_times: comma-separated "HH:MM,HH:MM" → JSON array
+        $times_raw = sanitize_text_field( $_POST['available_times'] ?? '' );
+        $times     = array_values( array_filter( array_map( 'trim', explode( ',', $times_raw ) ) ) );
+        // Validate HH:MM format
+        $times = array_filter( $times, fn($t) => preg_match('/^\d{2}:\d{2}$/', $t) );
+        $times_json = wp_json_encode( array_values( $times ) );
+
+        // available_days: checkboxes 0-6
+        $days = [];
+        foreach ( range(0,6) as $d ) {
+            if ( isset($_POST['day_' . $d]) ) $days[] = $d;
+        }
+        $days_json = wp_json_encode( $days );
+
+        $data = [
+            'name'             => $name,
+            'description'      => $description,
+            'duration_minutes' => $duration,
+            'available_times'  => $times_json,
+            'available_days'   => $days_json,
+            'sort_order'       => $sort_order,
+            'active'           => $active,
+        ];
+
+        if ( $id ) {
+            $wpdb->update( $wpdb->prefix . 'dora_services', $data, ['id' => $id],
+                ['%s','%s','%d','%s','%s','%d','%d'], ['%d'] );
+        } else {
+            $data['created_at'] = gmdate('Y-m-d H:i:s');
+            $wpdb->insert( $wpdb->prefix . 'dora_services', $data,
+                ['%s','%s','%d','%s','%s','%d','%d','%s'] );
+        }
+        wp_redirect( admin_url('admin.php?page=dora-services&saved=1') );
+        exit;
+    }
+
+    public function handle_delete_service(): void {
+        check_admin_referer('dora_delete_service');
+        if ( ! current_user_can('manage_options') ) wp_die('Unauthorized');
+        global $wpdb;
+        $wpdb->delete( $wpdb->prefix . 'dora_services', ['id' => absint($_POST['id'])], ['%d'] );
+        wp_redirect( admin_url('admin.php?page=dora-services&deleted=1') );
         exit;
     }
 }

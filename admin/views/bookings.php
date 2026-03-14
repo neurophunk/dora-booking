@@ -17,15 +17,15 @@ if ($f_service)   { $where[] = 'b.service_id = %d';      $params[] = $f_service;
 if ($f_status)    { $where[] = 'b.status = %s';          $params[] = $f_status; }
 if ($f_payment)   { $where[] = 'b.payment_type = %s';    $params[] = $f_payment; }
 
-$sql = "SELECT b.*, s.title as service_title FROM {$wpdb->prefix}dora_bookings b
-        LEFT JOIN {$wpdb->prefix}bookly_services s ON s.id = b.service_id
+$sql = "SELECT b.*, s.name as service_title FROM {$wpdb->prefix}dora_bookings b
+        LEFT JOIN {$wpdb->prefix}dora_services s ON s.id = b.service_id
         WHERE " . implode(' AND ', $where) . "
         ORDER BY b.start_datetime DESC LIMIT 200";
 $rows = $params
     ? $wpdb->get_results($wpdb->prepare($sql, ...$params))
     : $wpdb->get_results($sql);
 $tz = wp_timezone();
-$services = $wpdb->get_results("SELECT id, title FROM {$wpdb->prefix}bookly_services ORDER BY title");
+$services = $wpdb->get_results("SELECT id, name as title FROM {$wpdb->prefix}dora_services WHERE active=1 ORDER BY sort_order ASC, name ASC");
 ?>
 <div class="wrap">
   <h1>DoraBooking — Foglalások</h1>

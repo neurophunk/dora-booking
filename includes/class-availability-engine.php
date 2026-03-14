@@ -4,116 +4,104 @@ if ( ! defined( 'ABSPATH' ) ) exit;
 
 class Dora_Availability_Engine {
 
-    /**
-     * Check if a specific time slot is free for a staff member.
-     * Uses LEFT JOIN to include OTA Sync Block ghost appointments
-     * (which have no bookly_customer_appointments row).
-     */
-    public function is_slot_free( int $staff_id, string $start, string $end ): bool {
+    private function get_service( int $service_id ): ?object {
         global $wpdb;
-        $sql = $wpdb->prepare(
-            "SELECT COUNT(*) FROM {$wpdb->prefix}bookly_appointments a
-             LEFT JOIN {$wpdb->prefix}bookly_customer_appointments ca
-                    ON ca.appointment_id = a.id
-             WHERE a.staff_id = %d
-               AND a.start_date < %s
-               AND a.end_date   > %s
-               AND (ca.id IS NULL OR ca.status NOT IN ('cancelled','rejected'))",
-            $staff_id, $end, $start
-        );
-        return (int) $wpdb->get_var( $sql ) === 0;
+        return $wpdb->get_row( $wpdb->prepare(
+            "SELECT * FROM {$wpdb->prefix}dora_services WHERE id = %d AND active = 1",
+            $service_id
+        ) );
     }
 
     /**
-     * Return array of available date strings ('Y-m-d') in a date range.
-     *
-     * @param int    $staff_id         Staff member ID.
-     * @param int    $service_id       Service ID (reserved for future filtering).
-     * @param string $month_start      Range start date 'Y-m-d'.
-     * @param string $month_end        Range end date 'Y-m-d'.
-     * @param array  $slot_times       Array of 'HH:MM' start times.
-     * @param int    $duration_minutes Service duration in minutes.
-     * @return array Unique sorted date strings that have at least one free slot.
+     * Returns list of dates (Y-m-d) that have at least one free slot.
      */
-    public function get_available_days(
-        int $staff_id,
-        int $service_id,
-        string $month_start,
-        string $month_end,
-        array $slot_times,
-        int $duration_minutes
-    ): array {
-        $available = [];
-        $cursor = new DateTime( $month_start, new DateTimeZone('UTC') );
-        $end    = new DateTime( $month_end,   new DateTimeZone('UTC') );
-        $now    = new DateTime( 'now',         new DateTimeZone('UTC') );
+    public function get_available_days( int $service_id, string $year_month ): array {
+        $service = $this->get_service( $service_id );
+        if ( ! $service ) return [];
 
-        while ( $cursor <= $end ) {
-            $date = $cursor->format('Y-m-d');
-            foreach ( $slot_times as $time ) {
-                $slot_start = new DateTime( $date . ' ' . $time, new DateTimeZone('UTC') );
-                if ( $slot_start <= $now ) {
-                    continue; // skip past slots
-                }
-                $slot_end = clone $slot_start;
-                $slot_end->modify( "+{$duration_minutes} minutes" );
+        $available_days  = json_decode( $service->available_days, true );  // [0..6]
+        $available_times = json_decode( $service->available_times, true ); // ["09:00",...]
+        if ( ! is_array( $available_days ) || ! is_array( $available_times ) ) return [];
 
-                if ( $this->is_slot_free(
-                    $staff_id,
-                    $slot_start->format('Y-m-d H:i:s'),
-                    $slot_end->format('Y-m-d H:i:s')
-                ) ) {
-                    $available[] = $date;
-                    break; // at least one free slot found — day is available
+        $tz             = wp_timezone();
+        [ $year, $month ] = explode( '-', $year_month );
+        $days_in_month  = (int) ( new DateTime( "$year-$month-01", $tz ) )->format( 't' );
+        $now_utc        = new DateTime( 'now', new DateTimeZone( 'UTC' ) );
+
+        $result = [];
+        for ( $d = 1; $d <= $days_in_month; $d++ ) {
+            $date = sprintf( '%s-%02d', $year_month, $d );
+            $dow  = (int) ( new DateTime( $date, $tz ) )->format( 'w' ); // 0=Sun
+
+            if ( ! in_array( $dow, $available_days, true ) ) continue;
+
+            foreach ( $available_times as $time ) {
+                $start = new DateTime( "$date $time", $tz );
+                $start->setTimezone( new DateTimeZone( 'UTC' ) );
+                if ( $start <= $now_utc ) continue; // past slot
+                if ( $this->is_slot_free( $service_id, $start->format( 'Y-m-d H:i:s' ), (int) $service->duration_minutes ) ) {
+                    $result[] = $date;
+                    break;
                 }
             }
-            $cursor->modify('+1 day');
         }
-
-        return array_values( array_unique( $available ) );
+        return $result;
     }
 
     /**
-     * Get free time slots for a specific date.
-     *
-     * @param int    $staff_id         Staff member ID.
-     * @param string $date             Date string 'Y-m-d'.
-     * @param array  $slot_times       Array of 'HH:MM' start times.
-     * @param int    $duration_minutes Service duration in minutes.
-     * @return array Each element: ['start', 'end', 'start_datetime', 'end_datetime'].
+     * Returns list of local-time strings ("HH:MM") available for a given date.
      */
-    public function get_available_slots_for_day(
-        int $staff_id,
-        string $date,
-        array $slot_times,
-        int $duration_minutes
-    ): array {
-        $free = [];
-        $tz   = new DateTimeZone('UTC');
-        $now  = new DateTime('now', $tz);
+    public function get_available_slots( int $service_id, string $date ): array {
+        $service = $this->get_service( $service_id );
+        if ( ! $service ) return [];
 
-        foreach ( $slot_times as $time ) {
-            $start = new DateTime( $date . ' ' . $time, $tz );
-            if ( $start <= $now ) {
-                continue; // skip past slots
-            }
-            $end = clone $start;
-            $end->modify( "+{$duration_minutes} minutes" );
+        $available_times = json_decode( $service->available_times, true );
+        if ( ! is_array( $available_times ) ) return [];
 
-            if ( $this->is_slot_free(
-                $staff_id,
-                $start->format('Y-m-d H:i:s'),
-                $end->format('Y-m-d H:i:s')
-            ) ) {
-                $free[] = [
-                    'start'          => $start->format('H:i'),
-                    'end'            => $end->format('H:i'),
-                    'start_datetime' => $start->format('Y-m-d H:i:s'),
-                    'end_datetime'   => $end->format('Y-m-d H:i:s'),
-                ];
+        $tz      = wp_timezone();
+        $now_utc = new DateTime( 'now', new DateTimeZone( 'UTC' ) );
+        $result  = [];
+
+        foreach ( $available_times as $time ) {
+            $start = new DateTime( "$date $time", $tz );
+            $start->setTimezone( new DateTimeZone( 'UTC' ) );
+            if ( $start <= $now_utc ) continue;
+            if ( $this->is_slot_free( $service_id, $start->format( 'Y-m-d H:i:s' ), (int) $service->duration_minutes ) ) {
+                $result[] = $time;
             }
         }
+        return $result;
+    }
 
-        return $free;
+    /**
+     * Returns true if no confirmed/pending booking overlaps the given UTC slot.
+     */
+    public function is_slot_free( int $service_id, string $start_utc, int $duration_minutes ): bool {
+        global $wpdb;
+        $end_utc = ( new DateTime( $start_utc, new DateTimeZone( 'UTC' ) ) )
+            ->modify( "+{$duration_minutes} minutes" )
+            ->format( 'Y-m-d H:i:s' );
+
+        $count = $wpdb->get_var( $wpdb->prepare(
+            "SELECT COUNT(*) FROM {$wpdb->prefix}dora_bookings
+             WHERE service_id = %d
+               AND status IN ('pending','confirmed')
+               AND start_datetime < %s
+               AND end_datetime > %s",
+            $service_id, $end_utc, $start_utc
+        ) );
+        return (int) $count === 0;
+    }
+
+    /**
+     * Returns duration_minutes for a service.
+     */
+    public function get_duration( int $service_id ): int {
+        global $wpdb;
+        $d = $wpdb->get_var( $wpdb->prepare(
+            "SELECT duration_minutes FROM {$wpdb->prefix}dora_services WHERE id = %d",
+            $service_id
+        ) );
+        return (int) ( $d ?? 60 );
     }
 }

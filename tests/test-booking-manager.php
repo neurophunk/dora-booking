@@ -40,9 +40,7 @@ class BookingManagerTest extends TestCase {
     private function base_data(): array {
         return [
             'service_id'     => 1,
-            'staff_id'       => 1,
             'start_datetime' => '2026-04-01 09:00:00',
-            'end_datetime'   => '2026-04-01 10:00:00',
             'persons'        => 2,
             'total_price'    => 120.00,
             'currency'       => 'EUR',
@@ -56,9 +54,11 @@ class BookingManagerTest extends TestCase {
     public function test_create_pending_returns_booking_id_when_slot_free(): void {
         global $wpdb;
         $wpdb->shouldReceive('prepare')->andReturn('SQL');
-        $wpdb->shouldReceive('get_var')->andReturn('0'); // slot free
+        // get_var calls: (1) get_duration, (2) is_slot_free count
+        $wpdb->shouldReceive('get_var')->andReturn('60', '0');
         $wpdb->shouldReceive('query')->andReturn(true);  // START TRANSACTION + COMMIT
-        $wpdb->shouldReceive('insert')->andReturn(1);
+        // Only one insert: dora_bookings
+        $wpdb->shouldReceive('insert')->once()->andReturn(1);
         $wpdb->insert_id = 42;
 
         $manager = $this->make_manager();
@@ -70,7 +70,8 @@ class BookingManagerTest extends TestCase {
     public function test_create_pending_returns_null_when_slot_taken(): void {
         global $wpdb;
         $wpdb->shouldReceive('prepare')->andReturn('SQL');
-        $wpdb->shouldReceive('get_var')->andReturn('1'); // slot taken
+        // get_var calls: (1) get_duration, (2) is_slot_free count → slot taken
+        $wpdb->shouldReceive('get_var')->andReturn('60', '1');
         $wpdb->shouldReceive('query')->andReturn(true);  // START TRANSACTION + ROLLBACK
 
         $manager = $this->make_manager();
@@ -152,7 +153,7 @@ class BookingManagerTest extends TestCase {
             'customer_name'  => 'Test User',
             'lang' => 'hu',
             'service_id' => 1,
-            'staff_id' => 1,
+            'staff_id' => 0,
             'persons' => 2,
             'total_price' => '120.00',
             'currency' => 'EUR',
@@ -163,12 +164,14 @@ class BookingManagerTest extends TestCase {
         // get_row call order: (1) cancel_by_token booking, (2) send() booking,
         // (3) build_vars() service_config, (4) send() email template
         $wpdb->shouldReceive('get_row')->andReturnValues([$booking, $booking, null, $tpl]);
-        $wpdb->shouldReceive('get_var')->andReturn('');  // service_title and guide_name in build_vars
+        $wpdb->shouldReceive('get_var')->andReturn('');  // service_title in build_vars
         $wpdb->shouldReceive('insert')->andReturn(1);    // email log insert in send()
         $wpdb->shouldReceive('update')->andReturn(1);
         $wpdb->shouldReceive('query')->andReturn(true); // START TRANSACTION + COMMIT
         \Brain\Monkey\Functions\expect('get_option')
             ->with('dora_cancellation_deadline_hours', 24)->andReturn(24);
+        \Brain\Monkey\Functions\expect('get_option')
+            ->with('dora_guide_name', '')->andReturn('');
         \Brain\Monkey\Functions\when('wp_mail')->justReturn(true);
 
         $manager = $this->make_manager();
@@ -176,7 +179,7 @@ class BookingManagerTest extends TestCase {
         $this->assertSame('ok', $result);
     }
 
-    // Fix 8: Test confirm() returns false for non-pending booking
+    // Test confirm() returns false for non-pending booking
     public function test_confirm_returns_false_for_non_pending_booking(): void {
         global $wpdb;
         $booking = (object)[
@@ -184,7 +187,7 @@ class BookingManagerTest extends TestCase {
             'customer_name'  => 'Test User',
             'customer_email' => 'test@example.com',
             'customer_phone' => null,
-            'staff_id'   => 1, 'service_id' => 1,
+            'staff_id'   => 0, 'service_id' => 1,
             'start_datetime' => '2026-04-01 09:00:00',
             'end_datetime'   => '2026-04-01 10:00:00',
             'persons'    => 2, 'total_price' => '120.00',
@@ -196,7 +199,7 @@ class BookingManagerTest extends TestCase {
         $this->assertFalse($manager->confirm(10));
     }
 
-    // Fix 8: Test confirm() returns true on happy-path success
+    // Test confirm() returns true on happy-path success (no Bookly writes)
     public function test_confirm_returns_true_on_success(): void {
         global $wpdb;
         $booking = (object)[
@@ -204,7 +207,7 @@ class BookingManagerTest extends TestCase {
             'customer_name'  => 'Test User',
             'customer_email' => 'test@example.com',
             'customer_phone' => null,
-            'staff_id'   => 1, 'service_id' => 1,
+            'staff_id'   => 0, 'service_id' => 1,
             'start_datetime' => '2026-04-01 09:00:00',
             'end_datetime'   => '2026-04-01 10:00:00',
             'persons'    => 2, 'total_price' => '120.00',
@@ -217,24 +220,24 @@ class BookingManagerTest extends TestCase {
         $admin_booking = (object)array_merge((array)$booking, ['service_title' => 'City Tour']);
 
         // get_row call order:
-        // (1) get(7) booking lookup
+        // (1) get(7) booking lookup in confirm()
         // (2) send() booking lookup inside send_confirmation
         // (3) build_vars() service_config lookup
         // (4) send() email template lookup
         // (5) send_admin_notification() booking+service JOIN lookup
         $wpdb->shouldReceive('prepare')->andReturn('SQL');
         $wpdb->shouldReceive('get_row')->andReturnValues([$booking, $booking, null, $tpl, $admin_booking]);
-        $wpdb->shouldReceive('query')->andReturn(true); // START TRANSACTION, upsert query, COMMIT
+        $wpdb->shouldReceive('query')->andReturn(true); // START TRANSACTION, COMMIT
 
-        // get_var call order: (1) customer_id in confirm(), (2) service_title in build_vars(),
-        // (3) guide_name in build_vars()
-        $wpdb->shouldReceive('get_var')->andReturn('3');
+        // get_var: service_title in build_vars
+        $wpdb->shouldReceive('get_var')->andReturn('City Tour');
 
-        // Inserts: bookly_appointments, bookly_customer_appointments, bookly_payments, email log
-        $wpdb->shouldReceive('insert')->andReturn(1);
+        // Only one insert: email log
+        $wpdb->shouldReceive('insert')->once()->andReturn(1);
         $wpdb->insert_id = 10;
 
-        $wpdb->shouldReceive('update')->andReturn(1);
+        // One update: dora_bookings status
+        $wpdb->shouldReceive('update')->once()->andReturn(1);
 
         \Brain\Monkey\Functions\when('get_option')->justReturn('admin@example.com');
         \Brain\Monkey\Functions\when('wp_mail')->justReturn(true);
