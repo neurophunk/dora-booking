@@ -1,0 +1,19 @@
+.dora-booking { max-width: 640px; margin: 0 auto; font-family: inherit; }
+.dora-step { padding: 1.5rem 0; }
+.dora-services { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; }
+.dora-service-card { border: 2px solid #ddd; border-radius: 8px; padding: 1rem; cursor: pointer; transition: border-color .2s; }
+.dora-service-card:hover, .dora-service-card.selected { border-color: #0073aa; background: #f0f7ff; }
+.dora-price-preview { margin: .75rem 0; font-weight: bold; color: #0073aa; }
+.dora-cal-header { font-weight: bold; margin-bottom: .5rem; }
+.dora-cal-day { display: inline-block; width: 36px; height: 36px; line-height: 36px; text-align: center; margin: 2px; border-radius: 4px; cursor: pointer; }
+.dora-cal-day.available { background: #0073aa; color: #fff; }
+.dora-cal-day.available:hover, .dora-cal-day.active { background: #005a87; }
+.dora-cal-day.disabled { background: #f0f0f0; color: #aaa; cursor: not-allowed; }
+.dora-slot-btn { margin: 4px; padding: 8px 16px; border: 2px solid #0073aa; border-radius: 4px; cursor: pointer; background: #fff; }
+.dora-slot-btn.selected, .dora-slot-btn:hover { background: #0073aa; color: #fff; }
+.dora-booking input, .dora-booking textarea { display: block; width: 100%; margin: .5rem 0; padding: .5rem; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+.dora-payment-options label { display: block; margin: .5rem 0; cursor: pointer; }
+.dora-btn-next, .dora-btn-confirm { background: #0073aa; color: #fff; border: none; padding: .75rem 1.5rem; border-radius: 4px; cursor: pointer; font-size: 1rem; margin-top: 1rem; }
+.dora-btn-back { background: #f0f0f0; border: none; padding: .5rem 1rem; border-radius: 4px; cursor: pointer; margin-top: 1rem; margin-right: .5rem; }
+.dora-btn-next:hover, .dora-btn-confirm:hover { background: #005a87; }
+#dora-step-5 h2 { color: #46b450; }
