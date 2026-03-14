@@ -46,13 +46,13 @@ $services = $wpdb->get_results("SELECT id, title FROM {$wpdb->prefix}bookly_serv
     Státusz: <select name="status">
       <option value="">— Összes —</option>
       <?php foreach (['pending','confirmed','cancelled'] as $st): ?>
-        <option value="<?= $st ?>" <?= selected($f_status, $st, false) ?>><?= $st ?></option>
+        <option value="<?= esc_attr($st) ?>" <?= selected($f_status, $st, false) ?>><?= esc_html($st) ?></option>
       <?php endforeach; ?>
     </select>
     Fizetés: <select name="payment">
       <option value="">— Összes —</option>
       <?php foreach (['onsite','stripe','paypal'] as $pt): ?>
-        <option value="<?= $pt ?>" <?= selected($f_payment, $pt, false) ?>><?= $pt ?></option>
+        <option value="<?= esc_attr($pt) ?>" <?= selected($f_payment, $pt, false) ?>><?= esc_html($pt) ?></option>
       <?php endforeach; ?>
     </select>
     Nézet: <select name="view">
@@ -65,6 +65,11 @@ $services = $wpdb->get_results("SELECT id, title FROM {$wpdb->prefix}bookly_serv
 
   <form method="post" action="<?= admin_url('admin-post.php') ?>">
     <input type="hidden" name="action" value="dora_export_csv">
+    <input type="hidden" name="date_from" value="<?= esc_attr($f_date_from) ?>">
+    <input type="hidden" name="date_to"   value="<?= esc_attr($f_date_to) ?>">
+    <input type="hidden" name="service"   value="<?= absint($f_service) ?>">
+    <input type="hidden" name="status"    value="<?= esc_attr($f_status) ?>">
+    <input type="hidden" name="payment"   value="<?= esc_attr($f_payment) ?>">
     <?php wp_nonce_field('dora_export_csv'); ?>
     <button class="button">CSV export</button>
   </form>
@@ -79,6 +84,9 @@ $services = $wpdb->get_results("SELECT id, title FROM {$wpdb->prefix}bookly_serv
   }
   // Determine month range to display
   $cal_month = sanitize_text_field($_GET['cal_month'] ?? gmdate('Y-m'));
+  if ( ! preg_match('/^\d{4}-\d{2}$/', $cal_month) ) {
+      $cal_month = gmdate('Y-m');
+  }
   [$cy, $cm] = explode('-', $cal_month);
   $first_day = new DateTime("$cy-$cm-01", $tz);
   $last_day  = new DateTime("$cy-$cm-" . $first_day->format('t'), $tz);
@@ -86,9 +94,9 @@ $services = $wpdb->get_results("SELECT id, title FROM {$wpdb->prefix}bookly_serv
   $next = (clone $first_day)->modify('+1 month')->format('Y-m');
 ?>
   <div style="margin:1rem 0">
-    <a href="?page=dora-booking&view=calendar&cal_month=<?= $prev ?>">← Előző</a>
+    <a href="?page=dora-booking&view=calendar&cal_month=<?= esc_attr($prev) ?>">← Előző</a>
     &nbsp;<strong><?= esc_html($cy . '/' . $cm) ?></strong>&nbsp;
-    <a href="?page=dora-booking&view=calendar&cal_month=<?= $next ?>">Következő →</a>
+    <a href="?page=dora-booking&view=calendar&cal_month=<?= esc_attr($next) ?>">Következő →</a>
   </div>
   <table class="wp-list-table widefat" style="table-layout:fixed">
     <thead><tr>
@@ -107,7 +115,9 @@ $services = $wpdb->get_results("SELECT id, title FROM {$wpdb->prefix}bookly_serv
         echo '<td style="vertical-align:top; min-height:60px">';
         echo "<strong>$d</strong>";
         if ($count > 0) {
-            echo "<br><a href='?page=dora-booking&date_from=$date&date_to=$date'>$count foglalás</a>";
+            $esc_date = esc_attr($date);
+            $esc_count = absint($count);
+            echo "<br><a href='?page=dora-booking&date_from={$esc_date}&date_to={$esc_date}'>{$esc_count} foglalás</a>";
         }
         echo '</td>';
         $cell++;

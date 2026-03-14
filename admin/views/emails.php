@@ -4,6 +4,8 @@ $types = ['confirmation','reminder','cancellation'];
 $langs = ['hu','en'];
 $sel_type = sanitize_text_field($_GET['type'] ?? 'confirmation');
 $sel_lang = sanitize_text_field($_GET['lang'] ?? 'hu');
+if ( ! in_array($sel_type, $types, true) ) $sel_type = 'confirmation';
+if ( ! in_array($sel_lang, $langs, true) ) $sel_lang = 'hu';
 $tpl = $wpdb->get_row( $wpdb->prepare(
     "SELECT subject, body FROM {$wpdb->prefix}dora_email_templates WHERE type=%s AND lang=%s",
     $sel_type, $sel_lang

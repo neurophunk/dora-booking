@@ -38,6 +38,7 @@ class Dora_Admin_Page {
 
     public function handle_save_tier(): void {
         check_admin_referer('dora_save_tier');
+        if ( ! current_user_can('manage_options') ) wp_die('Unauthorized');
         $service_id = absint($_POST['service_id']);
         $min        = absint($_POST['min_persons']);
         $max        = absint($_POST['max_persons']);
@@ -69,6 +70,7 @@ class Dora_Admin_Page {
 
     public function handle_delete_tier(): void {
         check_admin_referer('dora_delete_tier');
+        if ( ! current_user_can('manage_options') ) wp_die('Unauthorized');
         global $wpdb;
         $wpdb->delete( $wpdb->prefix . 'dora_pricing_tiers', ['id' => absint($_POST['tier_id'])], ['%d'] );
         wp_redirect( admin_url('admin.php?page=dora-pricing&deleted=1') );
@@ -77,6 +79,7 @@ class Dora_Admin_Page {
 
     public function handle_save_service_config(): void {
         check_admin_referer('dora_save_service_config');
+        if ( ! current_user_can('manage_options') ) wp_die('Unauthorized');
         $service_id    = absint($_POST['service_id']);
         $meeting_point = sanitize_textarea_field($_POST['meeting_point'] ?? '');
         $max_persons   = absint($_POST['max_persons'] ?? 99);
@@ -95,6 +98,7 @@ class Dora_Admin_Page {
 
     public function handle_save_email_template(): void {
         check_admin_referer('dora_save_email_template');
+        if ( ! current_user_can('manage_options') ) wp_die('Unauthorized');
         global $wpdb;
         $wpdb->query( $wpdb->prepare(
             "INSERT INTO {$wpdb->prefix}dora_email_templates (type, lang, subject, body)
@@ -111,6 +115,7 @@ class Dora_Admin_Page {
 
     public function handle_save_settings(): void {
         check_admin_referer('dora_save_settings');
+        if ( ! current_user_can('manage_options') ) wp_die('Unauthorized');
         $fields = [
             'dora_default_currency'           => sanitize_text_field($_POST['default_currency'] ?? 'EUR'),
             'dora_max_persons_global'          => absint($_POST['max_persons_global'] ?? 10),
@@ -162,13 +167,31 @@ class Dora_Admin_Page {
         if ( ! current_user_can('manage_options') ) wp_die('Unauthorized');
 
         global $wpdb;
-        $rows = $wpdb->get_results(
-            "SELECT b.id, s.title as service, b.start_datetime, b.persons, b.total_price, b.currency,
-                    b.payment_type, b.status, b.customer_name, b.customer_email, b.customer_phone, b.created_at
-             FROM {$wpdb->prefix}dora_bookings b
-             LEFT JOIN {$wpdb->prefix}bookly_services s ON s.id = b.service_id
-             ORDER BY b.start_datetime DESC"
-        );
+
+        $where  = ['1=1'];
+        $params = [];
+        $f_date_from = sanitize_text_field($_POST['date_from'] ?? '');
+        $f_date_to   = sanitize_text_field($_POST['date_to']   ?? '');
+        $f_service   = absint($_POST['service'] ?? 0);
+        $f_status    = sanitize_text_field($_POST['status']  ?? '');
+        $f_payment   = sanitize_text_field($_POST['payment'] ?? '');
+
+        if ($f_date_from) { $where[] = 'b.start_datetime >= %s'; $params[] = $f_date_from . ' 00:00:00'; }
+        if ($f_date_to)   { $where[] = 'b.start_datetime <= %s'; $params[] = $f_date_to   . ' 23:59:59'; }
+        if ($f_service)   { $where[] = 'b.service_id = %d';      $params[] = $f_service; }
+        if ($f_status)    { $where[] = 'b.status = %s';          $params[] = $f_status; }
+        if ($f_payment)   { $where[] = 'b.payment_type = %s';    $params[] = $f_payment; }
+
+        $sql = "SELECT b.id, s.title as service, b.start_datetime, b.persons, b.total_price, b.currency,
+                       b.payment_type, b.status, b.customer_name, b.customer_email, b.customer_phone, b.created_at
+                FROM {$wpdb->prefix}dora_bookings b
+                LEFT JOIN {$wpdb->prefix}bookly_services s ON s.id = b.service_id
+                WHERE " . implode(' AND ', $where) . "
+                ORDER BY b.start_datetime DESC";
+
+        $rows = $params
+            ? $wpdb->get_results($wpdb->prepare($sql, ...$params))
+            : $wpdb->get_results($sql);
 
         header('Content-Type: text/csv; charset=utf-8');
         header('Content-Disposition: attachment; filename="bookings-' . gmdate('Y-m-d') . '.csv"');
