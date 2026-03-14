@@ -24,7 +24,10 @@ foreach ( [
     require_once DORA_PATH . 'includes/' . $class . '.php';
 }
 
-require_once DORA_PATH . 'admin/class-admin-page.php';
+if ( is_admin() ) {
+    require_once DORA_PATH . 'admin/class-admin-page.php';
+    new Dora_Admin_Page();
+}
 
 register_activation_hook( __FILE__, 'dora_activate' );
 
