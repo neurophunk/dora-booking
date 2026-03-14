@@ -137,8 +137,6 @@ class BookingManagerTest extends TestCase {
         $this->assertSame('past_deadline', $manager->cancel_by_token('sometoken'));
     }
 
-    // Fix 9: Removed extra $wpdb->shouldReceive('get_var') and $wpdb->shouldReceive('get_results')
-    //         stubs — cancel_by_token never calls those methods.
     public function test_cancel_by_token_ok_when_before_deadline(): void {
         global $wpdb;
         // Start is 48h from now — well before 24h deadline
@@ -151,6 +149,7 @@ class BookingManagerTest extends TestCase {
             'wc_order_id' => null,
             'payment_type' => 'onsite',
             'customer_email' => 'test@example.com',
+            'customer_name'  => 'Test User',
             'lang' => 'hu',
             'service_id' => 1,
             'staff_id' => 1,
@@ -159,12 +158,18 @@ class BookingManagerTest extends TestCase {
             'currency' => 'EUR',
             'cancel_token' => 'sometoken',
         ];
+        $tpl = (object)[ 'subject' => 'Cancelled', 'body' => '<p>Cancelled</p>' ];
         $wpdb->shouldReceive('prepare')->andReturn('SQL');
-        $wpdb->shouldReceive('get_row')->andReturn($booking);
+        // get_row call order: (1) cancel_by_token booking, (2) send() booking,
+        // (3) build_vars() service_config, (4) send() email template
+        $wpdb->shouldReceive('get_row')->andReturnValues([$booking, $booking, null, $tpl]);
+        $wpdb->shouldReceive('get_var')->andReturn('');  // service_title and guide_name in build_vars
+        $wpdb->shouldReceive('insert')->andReturn(1);    // email log insert in send()
         $wpdb->shouldReceive('update')->andReturn(1);
         $wpdb->shouldReceive('query')->andReturn(true); // START TRANSACTION + COMMIT
         \Brain\Monkey\Functions\expect('get_option')
             ->with('dora_cancellation_deadline_hours', 24)->andReturn(24);
+        \Brain\Monkey\Functions\when('wp_mail')->justReturn(true);
 
         $manager = $this->make_manager();
         $result = $manager->cancel_by_token('sometoken');
@@ -203,35 +208,36 @@ class BookingManagerTest extends TestCase {
             'start_datetime' => '2026-04-01 09:00:00',
             'end_datetime'   => '2026-04-01 10:00:00',
             'persons'    => 2, 'total_price' => '120.00',
+            'currency'       => 'EUR',
+            'payment_type'   => 'onsite',
+            'lang'           => 'hu',
+            'cancel_token'   => 'tok123',
         ];
+        $tpl = (object)[ 'subject' => 'Confirmation', 'body' => '<p>Confirmed</p>' ];
+        $admin_booking = (object)array_merge((array)$booking, ['service_title' => 'City Tour']);
 
-        // get() calls get_row once, then confirm() calls prepare+query for upsert,
-        // then get_var for customer_id, then three inserts, then update.
+        // get_row call order:
+        // (1) get(7) booking lookup
+        // (2) send() booking lookup inside send_confirmation
+        // (3) build_vars() service_config lookup
+        // (4) send() email template lookup
+        // (5) send_admin_notification() booking+service JOIN lookup
         $wpdb->shouldReceive('prepare')->andReturn('SQL');
-        $wpdb->shouldReceive('get_row')->andReturn($booking);
+        $wpdb->shouldReceive('get_row')->andReturnValues([$booking, $booking, null, $tpl, $admin_booking]);
         $wpdb->shouldReceive('query')->andReturn(true); // START TRANSACTION, upsert query, COMMIT
 
-        // get_var returns customer_id = 3
+        // get_var call order: (1) customer_id in confirm(), (2) service_title in build_vars(),
+        // (3) guide_name in build_vars()
         $wpdb->shouldReceive('get_var')->andReturn('3');
 
-        // Three sequential inserts: appt_id=10, ca_id=20, payment_id=30
+        // Inserts: bookly_appointments, bookly_customer_appointments, bookly_payments, email log
         $wpdb->shouldReceive('insert')->andReturn(1);
-        // insert_id cycles: 10, 20, 30
         $wpdb->insert_id = 10;
 
-        $wpdb->shouldReceive('update')->andReturnUsing(function() use ($wpdb) {
-            static $call = 0;
-            $call++;
-            // After first insert_id=10 is read, subsequent reads will see updated values.
-            // We just need update to succeed.
-            return 1;
-        });
+        $wpdb->shouldReceive('update')->andReturn(1);
 
-        // Patch insert_id to cycle through expected values
-        // Because Mockery mock doesn't support dynamic property changes via shouldReceive,
-        // we rely on the fact that all three inserts return 1 (success) and insert_id is set
-        // to a non-zero value (10) — which satisfies the non-zero guards for appt_id.
-        // For ca_id and payment_id, the same insert_id=10 is used (non-zero, guards pass).
+        \Brain\Monkey\Functions\when('get_option')->justReturn('admin@example.com');
+        \Brain\Monkey\Functions\when('wp_mail')->justReturn(true);
 
         $manager = $this->make_manager();
         $this->assertTrue($manager->confirm(7));

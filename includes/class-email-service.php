@@ -51,16 +51,16 @@ class Dora_Email_Service {
         ];
 
         return [
-            '{name}'          => esc_html( $booking->customer_name ),
-            '{service}'       => esc_html( $service_title ),
+            '{name}'          => $booking->customer_name,
+            '{service}'       => $service_title,
             '{date}'          => $dt->format( 'Y-m-d' ),
             '{time}'          => $dt->format( 'H:i' ),
             '{persons}'       => (string) $booking->persons,
             '{total}'         => number_format( (float) $booking->total_price, 2 ),
             '{currency}'      => $booking->currency,
             '{payment_type}'  => $payment_labels[ $booking->payment_type ] ?? $booking->payment_type,
-            '{meeting_point}' => esc_html( $meeting_point ),
-            '{guide_name}'    => esc_html( $guide_name ),
+            '{meeting_point}' => $meeting_point,
+            '{guide_name}'    => $guide_name,
             '{cancel_url}'    => site_url( '/foglalas/lemondas/' ) . '?token=' . $booking->cancel_token,
             '{booking_ref}'   => '#' . str_pad( (string) $booking->id, 6, '0', STR_PAD_LEFT ),
         ];
@@ -86,6 +86,12 @@ class Dora_Email_Service {
         if ( ! $booking ) return false;
 
         $lang = $booking->lang ?? 'hu';
+
+        $allowed_types = [ 'confirmation', 'reminder', 'cancellation' ];
+        $allowed_langs = [ 'hu', 'en' ];
+        if ( ! in_array( $type, $allowed_types, true ) ) return false;
+        if ( ! in_array( $lang, $allowed_langs, true ) ) return false;
+
         $vars = $this->build_vars( $booking );
 
         // Prefer DB-stored template over file template.
@@ -177,9 +183,9 @@ class Dora_Email_Service {
         $body  = "<p><strong>Booking #{$ref}</strong></p>";
         $body .= "<p>Service: " . esc_html( $booking->service_title ) . "<br>";
         $body .= "Date: " . $dt->format( 'Y-m-d H:i' ) . " (Budapest)<br>";
-        $body .= "Persons: {$booking->persons}<br>";
-        $body .= "Total: {$booking->total_price} {$booking->currency}<br>";
-        $body .= "Payment: {$booking->payment_type}<br>";
+        $body .= "Persons: " . esc_html( (string) $booking->persons ) . "<br>";
+        $body .= "Total: " . esc_html( $booking->total_price ) . " " . esc_html( $booking->currency ) . "<br>";
+        $body .= "Payment: " . esc_html( $booking->payment_type ) . "<br>";
         $body .= "Customer: " . esc_html( $booking->customer_name )
                . " &lt;" . esc_html( $booking->customer_email ) . "&gt;</p>";
 
@@ -206,7 +212,10 @@ class Dora_Email_Service {
 
         $service = new self();
         foreach ( $bookings as $row ) {
-            $service->send( (int) $row->id, 'reminder' );
+            $result = $service->send( (int) $row->id, 'reminder' );
+            if ( ! $result ) {
+                error_log( sprintf( 'DoraBooking: reminder send failed for booking #%d', $row->id ) );
+            }
         }
     }
 
