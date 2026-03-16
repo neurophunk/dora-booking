@@ -199,7 +199,7 @@ class BookingManagerTest extends TestCase {
         $this->assertFalse($manager->confirm(10));
     }
 
-    // Test confirm() returns true on happy-path success (no Bookly writes)
+    // Test confirm() returns true on happy-path success
     public function test_confirm_returns_true_on_success(): void {
         global $wpdb;
         $booking = (object)[
