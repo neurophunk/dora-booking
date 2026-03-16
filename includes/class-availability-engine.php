@@ -75,6 +75,7 @@ class Dora_Availability_Engine {
 
     /**
      * Returns true if no confirmed/pending booking overlaps the given UTC slot.
+     * Also checks OTA sync blocks (ota-calendar-sync plugin) if present.
      */
     public function is_slot_free( int $service_id, string $start_utc, int $duration_minutes ): bool {
         global $wpdb;
@@ -82,6 +83,7 @@ class Dora_Availability_Engine {
             ->modify( "+{$duration_minutes} minutes" )
             ->format( 'Y-m-d H:i:s' );
 
+        // Check own bookings table.
         $count = $wpdb->get_var( $wpdb->prepare(
             "SELECT COUNT(*) FROM {$wpdb->prefix}dora_bookings
              WHERE service_id = %d
@@ -90,7 +92,43 @@ class Dora_Availability_Engine {
                AND end_datetime > %s",
             $service_id, $end_utc, $start_utc
         ) );
-        return (int) $count === 0;
+        if ( (int) $count > 0 ) return false;
+
+        // Check OTA sync blocks if ota-calendar-sync plugin is active.
+        if ( $this->ota_sync_active() ) {
+            $ota_count = $wpdb->get_var( $wpdb->prepare(
+                "SELECT COUNT(*)
+                 FROM {$wpdb->prefix}ota_sync_blocks osb
+                 JOIN {$wpdb->prefix}ota_sync_feeds osf ON osb.feed_id = osf.id
+                 WHERE osf.dora_service_id = %d
+                   AND osb.start_datetime < %s
+                   AND osb.end_datetime > %s",
+                $service_id, $end_utc, $start_utc
+            ) );
+            if ( (int) $ota_count > 0 ) return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Returns true if ota-calendar-sync plugin tables exist with dora_service_id support.
+     */
+    private function ota_sync_active(): bool {
+        global $wpdb;
+        static $checked = null;
+        if ( $checked !== null ) return $checked;
+
+        // Check table exists.
+        $table = $wpdb->get_var( "SHOW TABLES LIKE '{$wpdb->prefix}ota_sync_blocks'" );
+        if ( ! $table ) {
+            $checked = false;
+            return false;
+        }
+        // Check dora_service_id column exists in feeds table.
+        $col = $wpdb->get_var( "SHOW COLUMNS FROM {$wpdb->prefix}ota_sync_feeds LIKE 'dora_service_id'" );
+        $checked = (bool) $col;
+        return $checked;
     }
 
     /**

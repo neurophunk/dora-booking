@@ -91,11 +91,12 @@
   });
 
   function updatePrice() {
+    $('#dora-price-preview').html('<span class="dora-price-loading"><span class="dora-spinner"></span></span>');
+    $('#dora-step1-next').hide();
     ajax('dora_get_price', { service_id: state.serviceId, persons: state.persons })
       .done(function (res) {
         if (!res.success || !res.data) {
           $('#dora-price-preview').text('Érdeklődjön / Inquire for pricing');
-          $('#dora-step1-next').hide();
           state.total = null;
           return;
         }

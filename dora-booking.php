@@ -2,13 +2,13 @@
 /**
  * Plugin Name: DoraBooking
  * Description: Custom booking system for dorabudapest.com
- * Version: 1.0.0
+ * Version: 1.1.0
  * Requires PHP: 7.4
  */
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'DORA_VERSION', '1.0.0' );
+define( 'DORA_VERSION', '1.1.0' );
 define( 'DORA_DB_VERSION', '1.1' );
 define( 'DORA_PATH', plugin_dir_path( __FILE__ ) );
 
