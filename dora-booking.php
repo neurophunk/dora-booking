@@ -2,14 +2,14 @@
 /**
  * Plugin Name: DoraBooking
  * Description: Custom booking system for dorabudapest.com
- * Version: 1.1.0
+ * Version: 1.4.1
  * Requires PHP: 7.4
  */
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'DORA_VERSION', '1.1.0' );
-define( 'DORA_DB_VERSION', '1.1' );
+define( 'DORA_VERSION', '1.4.1' );
+define( 'DORA_DB_VERSION', '1.2' );
 define( 'DORA_PATH', plugin_dir_path( __FILE__ ) );
 
 // Autoload includes
@@ -105,8 +105,25 @@ function dora_run_migrations(): void {
         service_id       INT NOT NULL,
         meeting_point    TEXT NULL,
         max_persons      TINYINT NOT NULL DEFAULT 99,
+        slot_mode        VARCHAR(10) NOT NULL DEFAULT 'recurring',
         UNIQUE KEY service_id (service_id)
     ) {$charset};" );
+
+    dbDelta( "CREATE TABLE {$wpdb->prefix}dora_specific_slots (
+        id         INT AUTO_INCREMENT PRIMARY KEY,
+        service_id INT NOT NULL,
+        slot_date  DATE NOT NULL,
+        slot_time  VARCHAR(5) NOT NULL,
+        created_at DATETIME NOT NULL,
+        UNIQUE KEY service_date_time (service_id, slot_date, slot_time),
+        KEY service_date (service_id, slot_date)
+    ) {$charset};" );
+
+    // Add slot_mode column to existing installs (dbDelta won't ADD COLUMN).
+    $col = $wpdb->get_var( "SHOW COLUMNS FROM {$wpdb->prefix}dora_service_config LIKE 'slot_mode'" );
+    if ( ! $col ) {
+        $wpdb->query( "ALTER TABLE {$wpdb->prefix}dora_service_config ADD COLUMN slot_mode VARCHAR(10) NOT NULL DEFAULT 'recurring'" );
+    }
 
     dbDelta( "CREATE TABLE {$wpdb->prefix}dora_services (
         id               INT AUTO_INCREMENT PRIMARY KEY,

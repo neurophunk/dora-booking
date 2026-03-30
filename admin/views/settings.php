@@ -21,6 +21,17 @@
         <input type="number" name="cancellation_deadline_hours" value="<?= absint(get_option('dora_cancellation_deadline_hours',24)) ?>" min="0">
         <p class="description">Ennyi órával a túra előtt még lemondható.</p>
       </td></tr>
+      <tr><th>Előre foglalható (hónap)</th><td>
+        <input type="number" name="advance_booking_months"
+               value="<?= absint(get_option('dora_advance_booking_months', 2)) ?>"
+               min="1" max="24" style="width:80px">
+        <p class="description">Legfeljebb ennyi hónapra előre lehet foglalni a mai naptól.</p>
+      </td></tr>
+      <tr><th>Elsődleges szín</th><td>
+        <input type="color" name="primary_color"
+               value="<?= esc_attr(get_option('dora_primary_color', '#1a56db')) ?>">
+        <p class="description">A foglalási form gombjainak, kiemelőinek színe.</p>
+      </td></tr>
       <tr><th>Admin értesítési email</th><td>
         <input type="email" name="admin_notification_email"
                value="<?= esc_attr(get_option('dora_admin_notification_email', get_option('admin_email'))) ?>"

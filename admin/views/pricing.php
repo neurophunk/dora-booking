@@ -28,9 +28,12 @@ $config   = $engine->get_service_config($sel_id);
   <form method="post" action="<?= admin_url('admin-post.php') ?>" style="margin:1rem 0">
     <input type="hidden" name="action" value="dora_save_service_config">
     <input type="hidden" name="service_id" value="<?= $sel_id ?>">
-    <?php wp_nonce_field('dora_save_service_config'); ?>
+    <?php wp_nonce_field('dora_save_service_config');
+    $slot_mode = $config->slot_mode ?? 'recurring'; ?>
     Max. személyek: <input type="number" name="max_persons" value="<?= absint($config->max_persons ?? 99) ?>" style="width:60px">
+    &nbsp;&nbsp;
     Találkozási pont: <input type="text" name="meeting_point" value="<?= esc_attr($config->meeting_point ?? '') ?>" style="width:300px">
+    &nbsp;&nbsp;
     <button class="button">Mentés</button>
   </form>
 

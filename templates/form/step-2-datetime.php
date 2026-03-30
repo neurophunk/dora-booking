@@ -10,6 +10,9 @@
         <span>H</span><span>K</span><span>Sze</span><span>Cs</span><span>P</span><span>Szo</span><span>V</span>
       </div>
       <div id="dora-calendar"></div>
+      <div id="dora-cal-loading" class="dora-cal-loading" style="display:none">
+        <span class="dora-spinner"></span>
+      </div>
     </div>
     <div id="dora-slots" style="display:none">
       <h3 class="dora-slots-title">Szabad időpontok</h3>

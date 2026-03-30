@@ -25,6 +25,12 @@ class Dora_Booking_Form {
     public function enqueue_assets(): void {
         if ( ! $this->page_has_shortcode() ) return;
         wp_enqueue_style( 'dora-booking', plugins_url( 'assets/booking.css', DORA_PATH . 'dora-booking.php' ), [], DORA_VERSION );
+
+        $hex = get_option( 'dora_primary_color', '#1a56db' );
+        $hex = preg_match('/^#[0-9a-fA-F]{6}$/', $hex) ? $hex : '#1a56db';
+        list( $r, $g, $b ) = sscanf( $hex, '#%02x%02x%02x' );
+        wp_add_inline_style( 'dora-booking', ":root{--dora-primary:{$hex};--dora-primary-rgb:{$r},{$g},{$b};}" );
+
         wp_enqueue_script( 'dora-booking', plugins_url( 'assets/booking.js', DORA_PATH . 'dora-booking.php' ), [ 'jquery' ], DORA_VERSION, true );
         wp_localize_script( 'dora-booking', 'doraBooking', [
             'ajaxUrl' => admin_url( 'admin-ajax.php' ),

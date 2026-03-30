@@ -12,12 +12,25 @@ class Dora_Availability_Engine {
         ) );
     }
 
+    private function get_slot_mode( int $service_id ): string {
+        global $wpdb;
+        $mode = $wpdb->get_var( $wpdb->prepare(
+            "SELECT slot_mode FROM {$wpdb->prefix}dora_service_config WHERE service_id = %d",
+            $service_id
+        ) );
+        return ( $mode === 'specific' ) ? 'specific' : 'recurring';
+    }
+
     /**
      * Returns list of dates (Y-m-d) that have at least one free slot.
      */
     public function get_available_days( int $service_id, string $year_month ): array {
         $service = $this->get_service( $service_id );
         if ( ! $service ) return [];
+
+        if ( $this->get_slot_mode( $service_id ) === 'specific' ) {
+            return $this->get_specific_available_days( $service_id, $year_month, $service );
+        }
 
         $available_days  = json_decode( $service->available_days, true );  // [0..6]
         $available_times = json_decode( $service->available_times, true ); // ["09:00",...]
@@ -27,6 +40,9 @@ class Dora_Availability_Engine {
         [ $year, $month ] = explode( '-', $year_month );
         $days_in_month  = (int) ( new DateTime( "$year-$month-01", $tz ) )->format( 't' );
         $now_utc        = new DateTime( 'now', new DateTimeZone( 'UTC' ) );
+        $advance_months = (int) get_option( 'dora_advance_booking_months', 2 );
+        $max_date_utc   = ( new DateTime( 'now', new DateTimeZone( 'UTC' ) ) )
+            ->modify( "+{$advance_months} months" );
 
         $result = [];
         for ( $d = 1; $d <= $days_in_month; $d++ ) {
@@ -39,10 +55,38 @@ class Dora_Availability_Engine {
                 $start = new DateTime( "$date $time", $tz );
                 $start->setTimezone( new DateTimeZone( 'UTC' ) );
                 if ( $start <= $now_utc ) continue; // past slot
+                if ( $start > $max_date_utc ) continue; // beyond advance booking limit
                 if ( $this->is_slot_free( $service_id, $start->format( 'Y-m-d H:i:s' ), (int) $service->duration_minutes ) ) {
                     $result[] = $date;
                     break;
                 }
+            }
+        }
+        return $result;
+    }
+
+    private function get_specific_available_days( int $service_id, string $year_month, object $service ): array {
+        global $wpdb;
+        $tz             = wp_timezone();
+        $now_utc        = new DateTime( 'now', new DateTimeZone( 'UTC' ) );
+        $advance_months = (int) get_option( 'dora_advance_booking_months', 2 );
+        $max_date_utc   = ( new DateTime( 'now', new DateTimeZone( 'UTC' ) ) )->modify( "+{$advance_months} months" );
+
+        $rows = $wpdb->get_results( $wpdb->prepare(
+            "SELECT slot_date, slot_time FROM {$wpdb->prefix}dora_specific_slots
+             WHERE service_id = %d AND slot_date LIKE %s
+             ORDER BY slot_date ASC, slot_time ASC",
+            $service_id, $year_month . '%'
+        ) );
+
+        $result = [];
+        foreach ( $rows as $row ) {
+            if ( in_array( $row->slot_date, $result, true ) ) continue;
+            $start = new DateTime( "{$row->slot_date} {$row->slot_time}", $tz );
+            $start->setTimezone( new DateTimeZone( 'UTC' ) );
+            if ( $start <= $now_utc || $start > $max_date_utc ) continue;
+            if ( $this->is_slot_free( $service_id, $start->format( 'Y-m-d H:i:s' ), (int) $service->duration_minutes ) ) {
+                $result[] = $row->slot_date;
             }
         }
         return $result;
@@ -55,17 +99,51 @@ class Dora_Availability_Engine {
         $service = $this->get_service( $service_id );
         if ( ! $service ) return [];
 
+        if ( $this->get_slot_mode( $service_id ) === 'specific' ) {
+            return $this->get_specific_slots( $service_id, $date, $service );
+        }
+
         $available_times = json_decode( $service->available_times, true );
         if ( ! is_array( $available_times ) ) return [];
 
-        $tz      = wp_timezone();
-        $now_utc = new DateTime( 'now', new DateTimeZone( 'UTC' ) );
+        $tz             = wp_timezone();
+        $now_utc        = new DateTime( 'now', new DateTimeZone( 'UTC' ) );
+        $advance_months = (int) get_option( 'dora_advance_booking_months', 2 );
+        $max_date_utc   = ( new DateTime( 'now', new DateTimeZone( 'UTC' ) ) )
+            ->modify( "+{$advance_months} months" );
         $result  = [];
 
         foreach ( $available_times as $time ) {
             $start = new DateTime( "$date $time", $tz );
             $start->setTimezone( new DateTimeZone( 'UTC' ) );
             if ( $start <= $now_utc ) continue;
+            if ( $start > $max_date_utc ) continue;
+            if ( $this->is_slot_free( $service_id, $start->format( 'Y-m-d H:i:s' ), (int) $service->duration_minutes ) ) {
+                $result[] = $time;
+            }
+        }
+        return $result;
+    }
+
+    private function get_specific_slots( int $service_id, string $date, object $service ): array {
+        global $wpdb;
+        $tz             = wp_timezone();
+        $now_utc        = new DateTime( 'now', new DateTimeZone( 'UTC' ) );
+        $advance_months = (int) get_option( 'dora_advance_booking_months', 2 );
+        $max_date_utc   = ( new DateTime( 'now', new DateTimeZone( 'UTC' ) ) )->modify( "+{$advance_months} months" );
+
+        $times = $wpdb->get_col( $wpdb->prepare(
+            "SELECT slot_time FROM {$wpdb->prefix}dora_specific_slots
+             WHERE service_id = %d AND slot_date = %s
+             ORDER BY slot_time ASC",
+            $service_id, $date
+        ) );
+
+        $result = [];
+        foreach ( $times as $time ) {
+            $start = new DateTime( "$date $time", $tz );
+            $start->setTimezone( new DateTimeZone( 'UTC' ) );
+            if ( $start <= $now_utc || $start > $max_date_utc ) continue;
             if ( $this->is_slot_free( $service_id, $start->format( 'Y-m-d H:i:s' ), (int) $service->duration_minutes ) ) {
                 $result[] = $time;
             }

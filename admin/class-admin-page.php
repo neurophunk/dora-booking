@@ -16,6 +16,8 @@ class Dora_Admin_Page {
         add_action( 'admin_post_dora_export_csv',         [ $this, 'handle_export_csv' ] );
         add_action( 'admin_post_dora_save_service',       [ $this, 'handle_save_service' ] );
         add_action( 'admin_post_dora_delete_service',     [ $this, 'handle_delete_service' ] );
+        add_action( 'admin_post_dora_save_slots',         [ $this, 'handle_save_slots' ] );
+        add_action( 'admin_post_dora_delete_slot',        [ $this, 'handle_delete_slot' ] );
     }
 
     public function register_menu(): void {
@@ -87,13 +89,15 @@ class Dora_Admin_Page {
         $service_id    = absint($_POST['service_id']);
         $meeting_point = sanitize_textarea_field($_POST['meeting_point'] ?? '');
         $max_persons   = absint($_POST['max_persons'] ?? 99);
+        $slot_mode     = in_array($_POST['slot_mode'] ?? 'recurring', ['recurring', 'specific'], true)
+                         ? $_POST['slot_mode'] : 'recurring';
 
         global $wpdb;
         $wpdb->query( $wpdb->prepare(
-            "INSERT INTO {$wpdb->prefix}dora_service_config (service_id, meeting_point, max_persons)
-             VALUES (%d, %s, %d)
-             ON DUPLICATE KEY UPDATE meeting_point = VALUES(meeting_point), max_persons = VALUES(max_persons)",
-            $service_id, $meeting_point, $max_persons
+            "INSERT INTO {$wpdb->prefix}dora_service_config (service_id, meeting_point, max_persons, slot_mode)
+             VALUES (%d, %s, %d, %s)
+             ON DUPLICATE KEY UPDATE meeting_point = VALUES(meeting_point), max_persons = VALUES(max_persons), slot_mode = VALUES(slot_mode)",
+            $service_id, $meeting_point, $max_persons, $slot_mode
         ) );
 
         wp_redirect( admin_url('admin.php?page=dora-pricing&config_saved=1&service=' . $service_id) );
@@ -120,11 +124,14 @@ class Dora_Admin_Page {
     public function handle_save_settings(): void {
         check_admin_referer('dora_save_settings');
         if ( ! current_user_can('manage_options') ) wp_die('Unauthorized');
+        $color_raw = sanitize_hex_color($_POST['primary_color'] ?? '#1a56db') ?: '#1a56db';
         $fields = [
             'dora_default_currency'           => sanitize_text_field($_POST['default_currency'] ?? 'EUR'),
             'dora_max_persons_global'          => absint($_POST['max_persons_global'] ?? 10),
             'dora_cancellation_deadline_hours' => absint($_POST['cancellation_deadline_hours'] ?? 24),
             'dora_admin_notification_email'    => sanitize_email($_POST['admin_notification_email'] ?? ''),
+            'dora_primary_color'               => $color_raw,
+            'dora_advance_booking_months'      => min(24, max(1, absint($_POST['advance_booking_months'] ?? 2))),
         ];
         foreach ($fields as $key => $val) update_option($key, $val);
         wp_redirect( admin_url('admin.php?page=dora-settings&saved=1') );
@@ -243,12 +250,22 @@ class Dora_Admin_Page {
         if ( $id ) {
             $wpdb->update( $wpdb->prefix . 'dora_services', $data, ['id' => $id],
                 ['%s','%s','%d','%s','%s','%d','%d'], ['%d'] );
+            // Save slot_mode to service_config
+            $slot_mode = in_array($_POST['slot_mode'] ?? 'recurring', ['recurring', 'specific'], true)
+                         ? $_POST['slot_mode'] : 'recurring';
+            $wpdb->query( $wpdb->prepare(
+                "INSERT INTO {$wpdb->prefix}dora_service_config (service_id, slot_mode)
+                 VALUES (%d, %s)
+                 ON DUPLICATE KEY UPDATE slot_mode = VALUES(slot_mode)",
+                $id, $slot_mode
+            ) );
+            wp_redirect( admin_url('admin.php?page=dora-services&edit=' . $id . '&saved=1') );
         } else {
             $data['created_at'] = gmdate('Y-m-d H:i:s');
             $wpdb->insert( $wpdb->prefix . 'dora_services', $data,
                 ['%s','%s','%d','%s','%s','%d','%d','%s'] );
+            wp_redirect( admin_url('admin.php?page=dora-services&saved=1') );
         }
-        wp_redirect( admin_url('admin.php?page=dora-services&saved=1') );
         exit;
     }
 
@@ -258,6 +275,52 @@ class Dora_Admin_Page {
         global $wpdb;
         $wpdb->delete( $wpdb->prefix . 'dora_services', ['id' => absint($_POST['id'])], ['%d'] );
         wp_redirect( admin_url('admin.php?page=dora-services&deleted=1') );
+        exit;
+    }
+
+    public function handle_save_slots(): void {
+        check_admin_referer('dora_save_slots');
+        if ( ! current_user_can('manage_options') ) wp_die('Unauthorized');
+        global $wpdb;
+
+        $service_id  = absint($_POST['service_id']);
+        $raw         = sanitize_textarea_field($_POST['slots_import'] ?? '');
+        $current_year = (int) gmdate('Y');
+        $inserted    = 0;
+
+        foreach ( explode("\n", $raw) as $line ) {
+            $line = trim($line);
+            if ( ! $line ) continue;
+            // Format: MM.DD HH:MM;HH:MM or M.D H:MM;HH:MM (flexible)
+            if ( ! preg_match('/^(\d{1,2})\.(\d{1,2})\s+(.+)$/', $line, $m) ) continue;
+            $month = (int) $m[1];
+            $day   = (int) $m[2];
+            if ( $month < 1 || $month > 12 || $day < 1 || $day > 31 ) continue;
+            $date  = sprintf('%04d-%02d-%02d', $current_year, $month, $day);
+            foreach ( array_map('trim', explode(';', $m[3])) as $time ) {
+                if ( ! preg_match('/^\d{1,2}:\d{2}$/', $time) ) continue;
+                [$h, $i] = explode(':', $time);
+                $normalized = sprintf('%02d:%02d', (int)$h, (int)$i);
+                $wpdb->query( $wpdb->prepare(
+                    "INSERT IGNORE INTO {$wpdb->prefix}dora_specific_slots (service_id, slot_date, slot_time, created_at)
+                     VALUES (%d, %s, %s, %s)",
+                    $service_id, $date, $normalized, gmdate('Y-m-d H:i:s')
+                ) );
+                $inserted++;
+            }
+        }
+
+        wp_redirect( admin_url("admin.php?page=dora-services&edit={$service_id}&slots_saved={$inserted}") );
+        exit;
+    }
+
+    public function handle_delete_slot(): void {
+        check_admin_referer('dora_delete_slot');
+        if ( ! current_user_can('manage_options') ) wp_die('Unauthorized');
+        global $wpdb;
+        $service_id = absint($_POST['service_id']);
+        $wpdb->delete( $wpdb->prefix . 'dora_specific_slots', ['id' => absint($_POST['slot_id'])], ['%d'] );
+        wp_redirect( admin_url("admin.php?page=dora-services&edit={$service_id}&slot_deleted=1") );
         exit;
     }
 }

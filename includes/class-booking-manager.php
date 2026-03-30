@@ -85,7 +85,7 @@ class Dora_Booking_Manager {
     }
 
     /**
-     * Confirm a booking: update dora_bookings status.
+     * Confirm a booking: update dora_bookings status only (no Bookly writes).
      */
     public function confirm( int $booking_id, ?int $wc_order_id = null ): bool {
         global $wpdb;

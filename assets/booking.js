@@ -70,7 +70,11 @@
     state.staffId = parseInt($(this).data('staff'), 10) || 1;
     state.persons = 1;
     $('#dora-persons').text(1);
-    $('#dora-persons-row').show();
+    if (state.maxPersons === 1) {
+      $('#dora-persons-row').hide();
+    } else {
+      $('#dora-persons-row').show();
+    }
     updatePrice();
   });
 
@@ -103,10 +107,14 @@
         state.pricePerPerson = res.data.price_per_person;
         state.total = res.data.total;
         state.currency = res.data.currency;
-        $('#dora-price-preview').text(
-          state.persons + ' fő × ' + state.pricePerPerson + ' ' + state.currency +
-          ' = ' + state.total + ' ' + state.currency
-        );
+        if (state.maxPersons === 1) {
+          $('#dora-price-preview').text(state.total + ' ' + state.currency);
+        } else {
+          $('#dora-price-preview').text(
+            state.persons + ' fő × ' + state.pricePerPerson + ' ' + state.currency +
+            ' = ' + state.total + ' ' + state.currency
+          );
+        }
         $('#dora-step1-next').show();
       });
   }
@@ -148,13 +156,16 @@
 
     $('#dora-cal-label').text(year + '. ' + ['jan','feb','már','ápr','máj','jún','júl','aug','sze','okt','nov','dec'][month-1]);
 
+    $('#dora-cal-loading').show();
+    $('#dora-calendar').empty();
     ajax('dora_get_available_days', {
       service_id: state.serviceId,
       year_month: year + '-' + monthStr,
     }).done(function (res) {
+      $('#dora-cal-loading').hide();
       if (!res.success) return;
       var available = res.data;
-      var $cal = $('#dora-calendar').empty();
+      var $cal = $('#dora-calendar');
 
       // Empty cells before first day (Mon-based)
       for (var i = 0; i < startOffset; i++) {
@@ -226,7 +237,7 @@
     var paymentType = $('input[name="dora-payment"]:checked').val();
     var paymentLabel = paymentType === 'onsite' ? 'Helyszíni fizetés' : 'Online fizetés';
     var html = '<ul>' +
-      '<li><span>Személyek</span><strong>' + state.persons + ' fő</strong></li>' +
+      (state.maxPersons > 1 ? '<li><span>Személyek</span><strong>' + state.persons + ' fő</strong></li>' : '') +
       '<li><span>Összeg</span><strong>' + state.total + ' ' + state.currency + '</strong></li>' +
       '<li><span>Időpont</span><strong>' + (state.startDatetime || '') + '</strong></li>' +
       '<li><span>Fizetési mód</span><strong>' + paymentLabel + '</strong></li>' +
