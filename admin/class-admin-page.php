@@ -125,6 +125,9 @@ class Dora_Admin_Page {
         check_admin_referer('dora_save_settings');
         if ( ! current_user_can('manage_options') ) wp_die('Unauthorized');
         $color_raw = sanitize_hex_color($_POST['primary_color'] ?? '#1a56db') ?: '#1a56db';
+        $allowed_methods = ['onsite', 'online'];
+        $raw_methods     = array_intersect((array)($_POST['payment_methods'] ?? []), $allowed_methods);
+        $payment_methods = ! empty($raw_methods) ? array_values($raw_methods) : ['onsite'];
         $fields = [
             'dora_default_currency'           => sanitize_text_field($_POST['default_currency'] ?? 'EUR'),
             'dora_max_persons_global'          => absint($_POST['max_persons_global'] ?? 10),
@@ -132,6 +135,7 @@ class Dora_Admin_Page {
             'dora_admin_notification_email'    => sanitize_email($_POST['admin_notification_email'] ?? ''),
             'dora_primary_color'               => $color_raw,
             'dora_advance_booking_months'      => min(24, max(1, absint($_POST['advance_booking_months'] ?? 2))),
+            'dora_payment_methods'             => $payment_methods,
         ];
         foreach ($fields as $key => $val) update_option($key, $val);
         wp_redirect( admin_url('admin.php?page=dora-settings&saved=1') );

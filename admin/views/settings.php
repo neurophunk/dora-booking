@@ -32,6 +32,18 @@
                value="<?= esc_attr(get_option('dora_primary_color', '#1a56db')) ?>">
         <p class="description">A foglalási form gombjainak, kiemelőinek színe.</p>
       </td></tr>
+      <tr><th>Fizetési módok</th><td>
+        <?php $methods = get_option('dora_payment_methods', ['onsite','online']); ?>
+        <label style="display:block;margin-bottom:.4rem">
+          <input type="checkbox" name="payment_methods[]" value="onsite" <?= in_array('onsite', $methods) ? 'checked' : '' ?>>
+          Helyszíni fizetés
+        </label>
+        <label style="display:block">
+          <input type="checkbox" name="payment_methods[]" value="online" <?= in_array('online', $methods) ? 'checked' : '' ?>>
+          Online fizetés (Stripe / PayPal)
+        </label>
+        <p class="description">Legalább egy legyen bekapcsolva.</p>
+      </td></tr>
       <tr><th>Admin értesítési email</th><td>
         <input type="email" name="admin_notification_email"
                value="<?= esc_attr(get_option('dora_admin_notification_email', get_option('admin_email'))) ?>"

@@ -156,8 +156,12 @@ class Dora_Booking_Form {
             if ( empty( $post[ $key ] ) ) return new \WP_Error( 'missing_field', "Missing: $key" );
         }
 
-        $payment_type = sanitize_text_field( $post['payment_type'] );
-        if ( ! in_array( $payment_type, [ 'onsite', 'stripe', 'paypal' ], true ) ) {
+        $payment_type    = sanitize_text_field( $post['payment_type'] );
+        $enabled_methods = get_option( 'dora_payment_methods', [ 'onsite', 'online' ] );
+        $allowed_types   = [];
+        if ( in_array( 'onsite', $enabled_methods, true ) ) $allowed_types[] = 'onsite';
+        if ( in_array( 'online', $enabled_methods, true ) ) array_push( $allowed_types, 'stripe', 'paypal' );
+        if ( ! in_array( $payment_type, $allowed_types, true ) ) {
             return new \WP_Error( 'invalid_payment_type', 'Invalid payment_type' );
         }
 
